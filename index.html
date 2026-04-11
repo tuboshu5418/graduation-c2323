@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- 音乐播放器 - 右下角圆形按钮 -->
+  <!-- 音乐播放器 -->
   <div class="music-player" id="musicPlayer">
     <button class="music-toggle" id="musicToggle" onclick="toggleMusic()">
       <span class="music-icon">🎵</span>
@@ -27,9 +27,7 @@
         </span>
       </div>
       <div class="lyrics-container" id="lyricsContainer">
-        <div class="lyrics-content" id="lyricsContent">
-          歌词加载中...
-        </div>
+        <div class="lyrics-content" id="lyricsContent">歌词加载中...</div>
       </div>
     </div>
   </div>
@@ -59,11 +57,15 @@
         <button onclick="logout()" class="btn btn-outline">退出</button>
       </div>
       
-      <!-- 标签页切换 -->
+      <!-- 标签页 -->
       <div class="tabs">
         <button class="tab active" onclick="switchTab('classmates')">同学录</button>
-        <button class="tab" onclick="switchTab('myMessages')">给我的留言</button>
+        <button class="tab" onclick="switchTab('teachers')">老师</button>
+        <button class="tab" onclick="switchTab('photos')">📷 照片墙</button>
+        <button class="tab" onclick="switchTab('myMessages')">留言</button>
+        <button class="tab" onclick="switchTab('myFeedback')">评价/感谢</button>
         <button class="tab" onclick="switchTab('profile')">我的资料</button>
+        <button class="tab admin-only" id="adminTab" style="display:none;" onclick="switchTab('admin')">📊 管理</button>
       </div>
 
       <!-- 同学录 -->
@@ -74,9 +76,32 @@
         <div id="classmatesList" class="list"></div>
       </div>
 
+      <!-- 老师 -->
+      <div id="teachersTab" class="tab-content">
+        <div id="teachersList" class="list"></div>
+      </div>
+
+      <!-- 照片墙 -->
+      <div id="photosTab" class="tab-content">
+        <div style="margin-bottom: 16px;">
+          <button onclick="openUploadPhotoModal()" class="btn btn-primary">📤 上传照片</button>
+        </div>
+        <div id="photosList" class="photos-grid"></div>
+      </div>
+
       <!-- 留言 -->
       <div id="myMessagesTab" class="tab-content">
         <div id="messagesList" class="list"></div>
+      </div>
+
+      <!-- 评价/感谢 -->
+      <div id="myFeedbackTab" class="tab-content">
+        <div class="feedback-filter">
+          <button class="filter-btn active" onclick="filterFeedback('all')">全部</button>
+          <button class="filter-btn" onclick="filterFeedback('evaluation')">评价</button>
+          <button class="filter-btn" onclick="filterFeedback('thanks')">感谢</button>
+        </div>
+        <div id="feedbackList" class="list"></div>
       </div>
 
       <!-- 个人资料 -->
@@ -92,6 +117,94 @@
         </div>
         <div class="form-group">
           <label>微信</label>
+          <input type="text" id="wechatInput" class="input">
+        </div>
+        <button onclick="updateContact()" class="btn btn-primary">保存联系方式</button>
+        <div id="saveResult" class="result"></div>
+        
+        <h3 style="margin-top: 30px;">🔐 修改密码</h3>
+        <div class="form-group">
+          <label>原密码</label>
+          <input type="password" id="oldPasswordInput" class="input">
+        </div>
+        <div class="form-group">
+          <label>新密码</label>
+          <input type="password" id="newPasswordInput" class="input">
+        </div>
+        <div class="form-group">
+          <label>确认新密码</label>
+          <input type="password" id="confirmPasswordInput" class="input">
+        </div>
+        <button onclick="changePassword()" class="btn btn-primary">修改密码</button>
+        <div id="passwordResult" class="result"></div>
+      </div>
+
+      <!-- 管理面板（仅管理员可见） -->
+      <div id="adminTab" class="tab-content">
+        <h3>📊 数据统计</h3>
+        <div id="adminStats" class="admin-stats"></div>
+        <h3 style="margin-top: 20px;">👥 所有用户</h3>
+        <div id="adminUsersList" class="list"></div>
+      </div>
+    </div>
+
+    <!-- 留言弹窗 -->
+    <div id="messageModal" class="modal">
+      <div class="modal-content">
+        <h3>💬 给 <span id="messageToName"></span> 留言</h3>
+        <textarea id="messageContent" class="input" rows="4" placeholder="写下你想说的话..."></textarea>
+        <div class="modal-buttons">
+          <button onclick="closeMessageModal()" class="btn btn-outline">取消</button>
+          <button onclick="sendMessage()" class="btn btn-primary">发送</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 评价/感谢弹窗 -->
+    <div id="feedbackModal" class="modal">
+      <div class="modal-content">
+        <h3>📝 <span id="feedbackTitle"></span></h3>
+        <input type="hidden" id="feedbackToName">
+        <input type="hidden" id="feedbackToRole">
+        <input type="hidden" id="feedbackType">
+        <textarea id="feedbackContent" class="input" rows="4" placeholder="写下你想说的话..."></textarea>
+        <div class="modal-buttons">
+          <button onclick="closeFeedbackModal()" class="btn btn-outline">取消</button>
+          <button onclick="sendFeedback()" class="btn btn-primary">发送</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 上传照片弹窗 -->
+    <div id="uploadPhotoModal" class="modal">
+      <div class="modal-content">
+        <h3>📷 上传照片</h3>
+        <div class="form-group">
+          <label>标题</label>
+          <input type="text" id="photoTitle" class="input" placeholder="照片标题">
+        </div>
+        <div class="form-group">
+          <label>描述</label>
+          <input type="text" id="photoDescription" class="input" placeholder="照片描述（可选）">
+        </div>
+        <div class="form-group">
+          <label>图片链接</label>
+          <input type="text" id="photoUrl" class="input" placeholder="粘贴图片URL">
+          <p style="font-size: 12px; color: #888; margin-top: 5px;">
+            推荐使用 <a href="https://imgbb.com/" target="_blank">ImgBB</a> 上传图片后粘贴链接
+          </p>
+        </div>
+        <div class="modal-buttons">
+          <button onclick="closeUploadPhotoModal()" class="btn btn-outline">取消</button>
+          <button onclick="uploadPhoto()" class="btn btn-primary">上传</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>          <label>微信</label>
           <input type="text" id="wechatInput" class="input">
         </div>
         <button onclick="updateContact()" class="btn btn-primary">保存联系方式</button>
