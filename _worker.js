@@ -32,7 +32,7 @@ export default {
       if (result) {
         return Response.json({ 
           success: true, 
-          user: { id: result.id, name: result.name, role: result.role, avatar: result.avatar }
+          user: { id: result.id, name: result.name, role: result.role, avatar: result.avatar || '' }
         }, { headers: corsHeaders });
       }
       return Response.json({ success: false, error: '姓名或密码错误' }, { status: 401, headers: corsHeaders });
@@ -68,7 +68,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 获取所有用户
+    // 获取所有用户（不含密码）
     if (path === '/users' && request.method === 'GET') {
       const result = await env.DB.prepare(
         'SELECT id, name, role, avatar FROM classmates ORDER BY name'
@@ -164,7 +164,6 @@ export default {
         return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
       }
       
-      // 不能删除自己
       if (requester === targetName) {
         return Response.json({ error: '不能删除自己' }, { status: 400, headers: corsHeaders });
       }
@@ -186,11 +185,10 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 发表留言（支持以他人名义，需管理员）
+    // 发表留言（支持以他人名义）
     if (path === '/messages' && request.method === 'POST') {
       const { from_name, to_name, content, requester } = await request.json();
       
-      // 如果以他人名义发送，验证管理员权限
       if (requester && requester !== from_name) {
         const admin = await env.DB.prepare(
           "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
@@ -336,7 +334,6 @@ export default {
         "SELECT role FROM classmates WHERE name = ?"
       ).bind(requester).first();
       
-      // 管理员可以删除任何照片
       if (photo.uploaded_by !== requester && user?.role !== 'admin') {
         return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
       }
