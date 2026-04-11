@@ -275,14 +275,14 @@ async function loadTeachers() {
       const card = document.createElement('div');
       card.className = 'classmate-card';
       card.innerHTML = `
-        <div class="classmate-info">
-          <h4>${t.name} ${t.role === 'admin' ? '👑' : '👨‍🏫'}</h4>
-          ${contactHtml ? `<div class="contact">${contactHtml}</div>` : ''}
-        </div>
-        <div class="action-buttons">
-          <button class="btn btn-small btn-primary" onclick="openFeedbackModal('${t.name}', 'teacher', 'evaluation')">评价</button>
-          <button class="btn btn-small btn-outline" onclick="openFeedbackModal('${t.name}', 'teacher', 'thanks')">感谢</button>
-        </div>
+      <div class="classmate-info">
+        <h4>${t.name} 👨‍🏫</h4>
+         ${contactHtml ? `<div class="contact">${contactHtml}</div>` : ''}
+      </div>
+       <div class="action-buttons">
+        <button class="btn btn-small btn-primary" onclick="openFeedbackModal('${t.name}', 'teacher', 'evaluation')">评价</button>
+        <button class="btn btn-small btn-outline" onclick="openFeedbackModal('${t.name}', 'teacher', 'thanks')">感谢</button>
+      </div>
       `;
       list.appendChild(card);
     }
