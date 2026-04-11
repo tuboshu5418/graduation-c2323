@@ -16,7 +16,7 @@ let isMusicPlaying = false;
 
 // 初始化音乐播放器
 function initMusicPlayer() {
-  audio = new Audio('/干杯.flac');
+  audio = new Audio('/干杯.mp3');
   lyricsElement = document.getElementById('lyricsContent');
   
   // 加载歌词文件
