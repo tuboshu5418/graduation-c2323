@@ -20,19 +20,19 @@ export default {
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
     
-    // 登录接口（返回角色信息）
+    // 登录
     if (path === '/login' && request.method === 'POST') {
       const { name, password } = await request.json();
       const passwordHash = await sha256(password);
       
       const result = await env.DB.prepare(
-        'SELECT id, name, role FROM classmates WHERE name = ? AND password_hash = ?'
+        'SELECT id, name, role, avatar FROM classmates WHERE name = ? AND password_hash = ?'
       ).bind(name, passwordHash).first();
       
       if (result) {
         return Response.json({ 
           success: true, 
-          user: { id: result.id, name: result.name, role: result.role }
+          user: { id: result.id, name: result.name, role: result.role, avatar: result.avatar }
         }, { headers: corsHeaders });
       }
       return Response.json({ success: false, error: '姓名或密码错误' }, { status: 401, headers: corsHeaders });
@@ -59,35 +59,52 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
+    // 更新头像
+    if (path === '/update-avatar' && request.method === 'PUT') {
+      const { name, avatar } = await request.json();
+      await env.DB.prepare(
+        'UPDATE classmates SET avatar = ? WHERE name = ?'
+      ).bind(avatar, name).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
     // 获取所有用户
     if (path === '/users' && request.method === 'GET') {
       const result = await env.DB.prepare(
-        'SELECT id, name, role FROM classmates ORDER BY name'
+        'SELECT id, name, role, avatar FROM classmates ORDER BY name'
       ).all();
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取所有同学（只有学生）
+    // 获取同学列表（用于下拉框）
+    if (path === '/classmates-list' && request.method === 'GET') {
+      const result = await env.DB.prepare(
+        'SELECT name FROM classmates ORDER BY name'
+      ).all();
+      return Response.json(result.results, { headers: corsHeaders });
+    }
+    
+    // 获取同学（学生+admin）
     if (path === '/classmates' && request.method === 'GET') {
       const result = await env.DB.prepare(
-        "SELECT id, name FROM classmates WHERE role = 'student' OR role = 'admin' ORDER BY name"
+        "SELECT id, name, avatar FROM classmates WHERE role IN ('student', 'admin') ORDER BY name"
       ).all();
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取所有老师
+    // 获取老师
     if (path === '/teachers' && request.method === 'GET') {
       const result = await env.DB.prepare(
-        "SELECT id, name, role FROM classmates WHERE role IN ('teacher', 'admin') ORDER BY name"
+        "SELECT id, name, role, avatar FROM classmates WHERE role = 'teacher' ORDER BY name"
       ).all();
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取某个用户的联系方式
+    // 获取联系方式
     if (path.startsWith('/contact/') && request.method === 'GET') {
       const name = decodeURIComponent(path.replace('/contact/', ''));
       const result = await env.DB.prepare(
-        'SELECT phone, email, wechat, role FROM classmates WHERE name = ?'
+        'SELECT phone, email, wechat, role, avatar FROM classmates WHERE name = ?'
       ).bind(name).first();
       return Response.json(result || {}, { headers: corsHeaders });
     }
@@ -101,6 +118,65 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
+    // 管理员更新任意用户信息
+    if (path === '/admin/update-user' && request.method === 'PUT') {
+      const { requester, targetName, phone, email, wechat, role } = await request.json();
+      
+      const admin = await env.DB.prepare(
+        "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
+      ).bind(requester).first();
+      if (!admin) {
+        return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
+      }
+      
+      await env.DB.prepare(
+        'UPDATE classmates SET phone = ?, email = ?, wechat = ?, role = ?, updated_at = datetime("now") WHERE name = ?'
+      ).bind(phone, email, wechat, role, targetName).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // 管理员添加用户
+    if (path === '/admin/add-user' && request.method === 'POST') {
+      const { requester, name, role, phone, email, wechat } = await request.json();
+      
+      const admin = await env.DB.prepare(
+        "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
+      ).bind(requester).first();
+      if (!admin) {
+        return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
+      }
+      
+      const defaultHash = 'bcb15f821479b4d5772bd0ca866c00ad5f926e3580720659cc80d39c9d09802a';
+      await env.DB.prepare(
+        'INSERT INTO classmates (name, password_hash, role, phone, email, wechat) VALUES (?, ?, ?, ?, ?, ?)'
+      ).bind(name, defaultHash, role, phone, email, wechat).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // 管理员删除用户
+    if (path === '/admin/delete-user' && request.method === 'DELETE') {
+      const { requester, targetName } = await request.json();
+      
+      const admin = await env.DB.prepare(
+        "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
+      ).bind(requester).first();
+      if (!admin) {
+        return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
+      }
+      
+      // 不能删除自己
+      if (requester === targetName) {
+        return Response.json({ error: '不能删除自己' }, { status: 400, headers: corsHeaders });
+      }
+      
+      await env.DB.prepare('DELETE FROM classmates WHERE name = ?').bind(targetName).run();
+      await env.DB.prepare('DELETE FROM messages WHERE from_name = ? OR to_name = ?').bind(targetName, targetName).run();
+      await env.DB.prepare('DELETE FROM feedbacks WHERE from_name = ? OR to_name = ?').bind(targetName, targetName).run();
+      await env.DB.prepare('DELETE FROM photos WHERE uploaded_by = ?').bind(targetName).run();
+      
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
     // 获取留言
     if (path.startsWith('/messages/') && request.method === 'GET') {
       const toName = decodeURIComponent(path.replace('/messages/', ''));
@@ -110,12 +186,38 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 发表留言
+    // 发表留言（支持以他人名义，需管理员）
     if (path === '/messages' && request.method === 'POST') {
-      const { from_name, to_name, content } = await request.json();
+      const { from_name, to_name, content, requester } = await request.json();
+      
+      // 如果以他人名义发送，验证管理员权限
+      if (requester && requester !== from_name) {
+        const admin = await env.DB.prepare(
+          "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
+        ).bind(requester).first();
+        if (!admin) {
+          return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
+        }
+      }
+      
       await env.DB.prepare(
         'INSERT INTO messages (from_name, to_name, content, created_at) VALUES (?, ?, ?, datetime("now"))'
       ).bind(from_name, to_name, content).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // 删除留言（管理员）
+    if (path === '/admin/delete-message' && request.method === 'DELETE') {
+      const { requester, messageId } = await request.json();
+      
+      const admin = await env.DB.prepare(
+        "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
+      ).bind(requester).first();
+      if (!admin) {
+        return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
+      }
+      
+      await env.DB.prepare('DELETE FROM messages WHERE id = ?').bind(messageId).run();
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
@@ -128,13 +230,13 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 获取收到的评价/感谢
+    // 获取评价/感谢
     if (path.startsWith('/feedback/') && request.method === 'GET') {
       const toName = decodeURIComponent(path.replace('/feedback/', ''));
       const urlParams = new URL(request.url).searchParams;
       const type = urlParams.get('type') || 'all';
       
-      let query = 'SELECT from_name, from_role, content, type, created_at FROM feedbacks WHERE to_name = ?';
+      let query = 'SELECT id, from_name, from_role, content, type, created_at FROM feedbacks WHERE to_name = ?';
       let params = [toName];
       
       if (type !== 'all') {
@@ -148,13 +250,28 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取所有数据（仅 admin）
+    // 删除评价/感谢（管理员）
+    if (path === '/admin/delete-feedback' && request.method === 'DELETE') {
+      const { requester, feedbackId } = await request.json();
+      
+      const admin = await env.DB.prepare(
+        "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
+      ).bind(requester).first();
+      if (!admin) {
+        return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
+      }
+      
+      await env.DB.prepare('DELETE FROM feedbacks WHERE id = ?').bind(feedbackId).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // 获取所有数据（管理员）
     if (path === '/admin/all-data' && request.method === 'GET') {
       const urlParams = new URL(request.url).searchParams;
       const requester = urlParams.get('requester');
       
       const user = await env.DB.prepare(
-        "SELECT role FROM classmates WHERE name = ? AND role IN ('admin', 'teacher')"
+        "SELECT role FROM classmates WHERE name = ? AND role = 'admin'"
       ).bind(requester).first();
       
       if (!user) {
@@ -162,15 +279,15 @@ export default {
       }
       
       const users = await env.DB.prepare(
-        'SELECT id, name, role, phone, email, wechat, updated_at FROM classmates ORDER BY name'
+        'SELECT id, name, role, phone, email, wechat, avatar, updated_at FROM classmates ORDER BY name'
       ).all();
       
       const messages = await env.DB.prepare(
-        'SELECT from_name, to_name, content, created_at FROM messages ORDER BY created_at DESC'
+        'SELECT id, from_name, to_name, content, created_at FROM messages ORDER BY created_at DESC'
       ).all();
       
       const feedbacks = await env.DB.prepare(
-        'SELECT from_name, from_role, to_name, to_role, content, type, created_at FROM feedbacks ORDER BY created_at DESC'
+        'SELECT id, from_name, from_role, to_name, to_role, content, type, created_at FROM feedbacks ORDER BY created_at DESC'
       ).all();
       
       const photos = await env.DB.prepare(
@@ -194,7 +311,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 获取照片列表
+    // 获取照片
     if (path === '/photos' && request.method === 'GET') {
       const result = await env.DB.prepare(
         'SELECT id, uploaded_by, title, description, image_url, created_at FROM photos ORDER BY created_at DESC'
@@ -202,7 +319,7 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 删除照片
+    // 删除照片（管理员或上传者）
     if (path.startsWith('/photos/') && request.method === 'DELETE') {
       const photoId = path.replace('/photos/', '');
       const { requester } = await request.json();
@@ -219,6 +336,7 @@ export default {
         "SELECT role FROM classmates WHERE name = ?"
       ).bind(requester).first();
       
+      // 管理员可以删除任何照片
       if (photo.uploaded_by !== requester && user?.role !== 'admin') {
         return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
       }
@@ -227,7 +345,6 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 其他请求返回静态文件
     return env.ASSETS.fetch(request);
   }
 };
