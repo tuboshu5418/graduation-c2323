@@ -1,207 +1,35 @@
-<!DOCTYPE html>
-<html lang="zh">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>我们班的毕业纪念册</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <!-- 音乐播放器 -->
-  <div class="music-player" id="musicPlayer">
-    <button class="music-toggle" id="musicToggle" onclick="toggleMusic()">
-      <span class="music-icon">🎵</span>
-    </button>
-    <div class="music-panel" id="musicPanel">
-      <div class="music-header">
-        <span>🎵 干杯 - 五月天</span>
-        <button class="close-panel" onclick="togglePanel()">✕</button>
+<!-- 登录页 -->
+<div id="loginPage" class="page active">
+  <div class="login-header">
+    <div class="login-icon">🎓</div>
+    <h1>毕业纪念册</h1>
+    <p class="login-subtitle">我们共同的美好时光</p>
+  </div>
+  <div class="login-form">
+    <div class="input-wrapper">
+      <input type="text" id="nameInput" class="input" placeholder="输入你的姓名" autocomplete="off">
+      <span class="input-icon">👤</span>
+    </div>
+    <div class="input-wrapper">
+      <input type="password" id="passwordInput" class="input" placeholder="输入密码">
+      <span class="input-icon">🔐</span>
+    </div>
+    <p class="login-hint">默认密码：111111</p>
+    <button onclick="login()" class="btn btn-primary">进入纪念册</button>
+    <p class="login-link" onclick="showNameList()">输了名字没反应？是不是开发时名字打错了</p>
+    <div id="loginError" class="error"></div>
+  </div>
+  
+  <!-- 名字选择弹窗（隐藏） -->
+  <div id="nameListModal" class="name-list-modal" style="display:none;">
+    <div class="name-list-content">
+      <div class="name-list-header">
+        <h3>选择你的名字</h3>
+        <button onclick="hideNameList()" class="modal-close">✕</button>
       </div>
-      <div class="music-controls">
-        <button onclick="togglePlay()" id="playBtn">▶️</button>
-        <div class="progress-container" onclick="seekTo(event)">
-          <div class="progress-bar" id="progressBar"></div>
-        </div>
-        <span class="time-display">
-          <span id="currentTime">0:00</span> / <span id="duration">0:00</span>
-        </span>
-      </div>
-      <div class="lyrics-container" id="lyricsContainer">
-        <div class="lyrics-content" id="lyricsContent">歌词加载中...</div>
+      <div class="name-list-body">
+        <div id="nameListOptions" class="name-options"></div>
       </div>
     </div>
   </div>
-
-  <div class="container">
-    <!-- 登录页 -->
-    <div id="loginPage" class="page active">
-      <h1>🎓 毕业纪念册</h1>
-      <p class="subtitle">输入你的姓名和密码登录</p>
-      <p class="subtitle" style="color: #667eea; font-size: 14px;">默认密码：111111</p>
-      <div class="form-group">
-        <select id="nameSelect" class="input">
-          <option value="">选择你的名字</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <input type="password" id="passwordInput" class="input" placeholder="输入密码">
-      </div>
-      <button onclick="login()" class="btn btn-primary">进入纪念册</button>
-      <div id="loginError" class="error"></div>
-    </div>
-
-    <!-- 主页 -->
-    <div id="mainPage" class="page">
-      <div class="header">
-        <h2>👋 <span id="welcomeName"></span></h2>
-        <button onclick="logout()" class="btn btn-outline">退出</button>
-      </div>
-      
-      <!-- 标签页 -->
-      <div class="tabs">
-        <button class="tab active" onclick="switchTab('classmates')">同学录</button>
-        <button class="tab" onclick="switchTab('teachers')">老师</button>
-        <button class="tab" onclick="switchTab('photos')">📷 照片墙</button>
-        <button class="tab" onclick="switchTab('myMessages')">留言</button>
-        <button class="tab" onclick="switchTab('myFeedback')">评价/感谢</button>
-        <button class="tab" onclick="switchTab('profile')">我的资料</button>
-        <button class="tab admin-only" id="adminTab" style="display:none;" onclick="switchTab('admin')">📊 管理</button>
-      </div>
-
-      <!-- 同学录 -->
-      <div id="classmatesTab" class="tab-content active">
-        <div class="search-box">
-          <input type="text" id="searchInput" placeholder="搜索同学..." class="input" onkeyup="filterClassmates()">
-        </div>
-        <div id="classmatesList" class="list"></div>
-      </div>
-
-      <!-- 老师 -->
-      <div id="teachersTab" class="tab-content">
-        <div id="teachersList" class="list"></div>
-      </div>
-
-      <!-- 照片墙 -->
-      <div id="photosTab" class="tab-content">
-        <div style="margin-bottom: 16px;">
-          <button onclick="openUploadPhotoModal()" class="btn btn-primary">📤 上传照片</button>
-        </div>
-        <div id="photosList" class="photos-grid"></div>
-      </div>
-
-      <!-- 留言 -->
-      <div id="myMessagesTab" class="tab-content">
-        <div id="messagesList" class="list"></div>
-      </div>
-
-      <!-- 评价/感谢 -->
-      <div id="myFeedbackTab" class="tab-content">
-        <div class="feedback-filter">
-          <button class="filter-btn active" onclick="filterFeedback('all')">全部</button>
-          <button class="filter-btn" onclick="filterFeedback('evaluation')">评价</button>
-          <button class="filter-btn" onclick="filterFeedback('thanks')">感谢</button>
-        </div>
-        <div id="feedbackList" class="list"></div>
-      </div>
-
-      <!-- 个人资料 -->
-      <div id="profileTab" class="tab-content">
-        <h3>📝 更新联系方式</h3>
-        <div class="form-group">
-          <label>手机号</label>
-          <input type="tel" id="phoneInput" class="input">
-        </div>
-        <div class="form-group">
-          <label>邮箱</label>
-          <input type="email" id="emailInput" class="input">
-        </div>
-        <div class="form-group">
-          <label>微信</label>
-          <input type="text" id="wechatInput" class="input">
-        </div>
-        <button onclick="updateContact()" class="btn btn-primary">保存联系方式</button>
-        <div id="saveResult" class="result"></div>
-        
-        <h3 style="margin-top: 30px;">🔐 修改密码</h3>
-        <div class="form-group">
-          <label>原密码</label>
-          <input type="password" id="oldPasswordInput" class="input">
-        </div>
-        <div class="form-group">
-          <label>新密码</label>
-          <input type="password" id="newPasswordInput" class="input">
-        </div>
-        <div class="form-group">
-          <label>确认新密码</label>
-          <input type="password" id="confirmPasswordInput" class="input">
-        </div>
-        <button onclick="changePassword()" class="btn btn-primary">修改密码</button>
-        <div id="passwordResult" class="result"></div>
-      </div>
-
-      <!-- 管理面板（仅管理员可见） -->
-      <div id="adminTab" class="tab-content">
-        <h3>📊 数据统计</h3>
-        <div id="adminStats" class="admin-stats"></div>
-        <h3 style="margin-top: 20px;">👥 所有用户</h3>
-        <div id="adminUsersList" class="list"></div>
-      </div>
-    </div>
-
-    <!-- 留言弹窗 -->
-    <div id="messageModal" class="modal">
-      <div class="modal-content">
-        <h3>💬 给 <span id="messageToName"></span> 留言</h3>
-        <textarea id="messageContent" class="input" rows="4" placeholder="写下你想说的话..."></textarea>
-        <div class="modal-buttons">
-          <button onclick="closeMessageModal()" class="btn btn-outline">取消</button>
-          <button onclick="sendMessage()" class="btn btn-primary">发送</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 评价/感谢弹窗 -->
-    <div id="feedbackModal" class="modal">
-      <div class="modal-content">
-        <h3>📝 <span id="feedbackTitle"></span></h3>
-        <input type="hidden" id="feedbackToName">
-        <input type="hidden" id="feedbackToRole">
-        <input type="hidden" id="feedbackType">
-        <textarea id="feedbackContent" class="input" rows="4" placeholder="写下你想说的话..."></textarea>
-        <div class="modal-buttons">
-          <button onclick="closeFeedbackModal()" class="btn btn-outline">取消</button>
-          <button onclick="sendFeedback()" class="btn btn-primary">发送</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 上传照片弹窗 -->
-    <div id="uploadPhotoModal" class="modal">
-      <div class="modal-content">
-        <h3>📷 上传照片</h3>
-        <div class="form-group">
-          <label>标题</label>
-          <input type="text" id="photoTitle" class="input" placeholder="照片标题">
-        </div>
-        <div class="form-group">
-          <label>描述</label>
-          <input type="text" id="photoDescription" class="input" placeholder="照片描述（可选）">
-        </div>
-        <div class="form-group">
-          <label>图片链接</label>
-          <input type="text" id="photoUrl" class="input" placeholder="粘贴图片URL">
-          <p style="font-size: 12px; color: #888; margin-top: 5px;">
-            推荐使用 <a href="https://imgbb.com/" target="_blank">ImgBB</a> 上传图片后粘贴链接
-          </p>
-        </div>
-        <div class="modal-buttons">
-          <button onclick="closeUploadPhotoModal()" class="btn btn-outline">取消</button>
-          <button onclick="uploadPhoto()" class="btn btn-primary">上传</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script src="script.js"></script>
-</body>
-</html>
+</div>
