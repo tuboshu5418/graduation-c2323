@@ -1,6 +1,6 @@
 // ========== 配置区 ==========
 // 使用相对路径，API 和前端在同一个 Pages 项目下
-const API_BASE = '/api';
+const API_BASE = '';
 // ============================
 
 let currentUser = null;
