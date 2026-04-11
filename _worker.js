@@ -230,14 +230,4 @@ export default {
     // 其他请求返回静态文件
     return env.ASSETS.fetch(request);
   }
-};      const { from_name, to_name, content } = await request.json();
-      await env.DB.prepare(
-        'INSERT INTO messages (from_name, to_name, content, created_at) VALUES (?, ?, ?, datetime("now"))'
-      ).bind(from_name, to_name, content).run();
-      return Response.json({ success: true }, { headers: corsHeaders });
-    }
-    
-    // 其他请求返回静态文件
-    return env.ASSETS.fetch(request);
-  }
 };
