@@ -424,55 +424,70 @@ async function renderTeachers() {
       return;
     }
     
-    let html = '';
+    let html = `
+      <div class="global-search-box">
+        <input type="text" id="teacherSearch" class="input" placeholder="搜索老师..." onkeyup="filterTeacherList()">
+      </div>
+      <div id="teachersListContainer"></div>
+    `;
+    
+    content.innerHTML = html;
+    
+    // 渲染老师卡片
+    const container = document.getElementById('teachersListContainer');
     for (const t of teachers) {
       const contactRes = await fetch(`/contact/${encodeURIComponent(t.name)}`);
       const contact = await contactRes.json();
-      const avatar = t.avatar || '👨‍🏫';
-      const isEmoji = avatar.length <= 2 || !avatar.startsWith('http');
       
-      html += `
-        <div class="teacher-card">
-          <div class="teacher-header">
-            <div class="teacher-avatar">
-              ${isEmoji ? avatar : `<img src="${avatar}" class="avatar-img" alt="${t.name}">`}
-            </div>
-            <div class="teacher-info">
-              <h4>${t.name}</h4>
-              <div class="teacher-subject">${t.subject || '老师'}</div>
-            </div>
-          </div>
-      `;
+      const card = document.createElement('div');
+      card.className = 'person-card teacher-card-item';
+      card.dataset.name = t.name;
       
-      if (contact.phone || contact.email || contact.wechat) {
-        html += '<div class="teacher-contact">';
-        if (contact.phone) html += `<div class="contact-row"><span>📱</span> ${contact.phone}</div>`;
-        if (contact.email) html += `<div class="contact-row"><span>📧</span> ${contact.email}</div>`;
-        if (contact.wechat) html += `<div class="contact-row"><span>💬</span> ${contact.wechat}</div>`;
-        html += '</div>';
-      }
+      const subjectMap = {
+        '语文': '📖', '数学': '📐', '英语': '🌍', '物理': '⚡', '化学': '🧪',
+        '政治': '🏛️', '历史': '📜', '音乐': '🎵', '体育': '⚽', '美术': '🎨'
+      };
       
-      html += `
-          <div class="teacher-actions">
-            <button class="btn btn-secondary btn-small" onclick="openFeedbackModal('${t.name}', 'teacher', 'evaluation')">📝 评价</button>
-            <button class="btn btn-primary btn-small" onclick="openFeedbackModal('${t.name}', 'teacher', 'thanks')">🙏 感谢</button>
-          </div>
+      card.innerHTML = `
+        <div class="person-name">
+          ${t.name}
+          <span class="teacher-subject-tag">${subjectMap[t.subject] || '👨‍🏫'} ${t.subject || ''}</span>
+        </div>
+        <div class="person-contact">
+          ${contact.phone ? `<div class="contact-line"><span class="emoji">📱</span> ${contact.phone}</div>` : ''}
+          ${contact.wechat ? `<div class="contact-line"><span class="emoji">💬</span> ${contact.wechat}</div>` : ''}
+          ${contact.email ? `<div class="contact-line"><span class="emoji">📧</span> ${contact.email}</div>` : ''}
+        </div>
+        <div class="person-actions">
+          <button class="btn btn-secondary btn-small" onclick="openFeedbackModal('${t.name}', 'teacher', 'evaluation')">评价</button>
+          <button class="btn btn-primary btn-small" onclick="openFeedbackModal('${t.name}', 'teacher', 'thanks')">感谢</button>
         </div>
       `;
+      container.appendChild(card);
     }
-    
-    content.innerHTML = html;
   } catch (e) {
     content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
+}
+
+function filterTeacherList() {
+  const keyword = document.getElementById('teacherSearch')?.value.toLowerCase() || '';
+  document.querySelectorAll('.teacher-card-item').forEach(card => {
+    const name = card.dataset.name?.toLowerCase() || '';
+    card.style.display = name.includes(keyword) ? 'grid' : 'none';
+  });
 }
 
 // ========== 同学录 ==========
 async function renderClassmates() {
   const content = document.getElementById('contentArea');
   
-  let html = '<div class="search-box"><input type="text" id="classmateSearch" class="input" placeholder="搜索同学..." onkeyup="filterClassmateList()"></div>';
-  html += '<div id="classmatesListContainer" class="list"></div>';
+  let html = `
+    <div class="global-search-box">
+      <input type="text" id="classmateSearch" class="input" placeholder="搜索同学..." onkeyup="filterClassmateList()">
+    </div>
+    <div id="classmatesListContainer"></div>
+  `;
   
   content.innerHTML = html;
   renderClassmatesListInContainer();
@@ -482,7 +497,10 @@ async function renderClassmatesListInContainer() {
   const container = document.getElementById('classmatesListContainer');
   if (!container) return;
   
-  const otherClassmates = allClassmates.filter(c => c.name !== currentUser.name);
+  // 按拼音排序
+  const otherClassmates = allClassmates
+    .filter(c => c.name !== currentUser.name)
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
   
   if (otherClassmates.length === 0) {
     container.innerHTML = '<div class="empty-state">暂无其他同学</div>';
@@ -497,35 +515,43 @@ async function renderClassmatesListInContainer() {
       const contact = await contactRes.json();
       
       const card = document.createElement('div');
-      card.className = 'classmate-card';
+      card.className = 'person-card classmate-card-item';
       card.dataset.name = c.name;
       
-      let contactHtml = '';
-      if (contact.phone) contactHtml += `<span>📱 ${contact.phone}</span>`;
-      if (contact.email) contactHtml += `<span>📧 ${contact.email}</span>`;
-      if (contact.wechat) contactHtml += `<span>💬 ${contact.wechat}</span>`;
-      
       card.innerHTML = `
-        <div class="classmate-info">
-          <h4>${c.name}</h4>
-          ${contactHtml ? `<div class="contact">${contactHtml}</div>` : ''}
+        <div class="person-name">${c.name}</div>
+        <div class="person-contact">
+          ${contact.phone ? `<div class="contact-line"><span class="emoji">📱</span> ${contact.phone}</div>` : ''}
+          ${contact.wechat ? `<div class="contact-line"><span class="emoji">💬</span> ${contact.wechat}</div>` : ''}
+          ${contact.email ? `<div class="contact-line"><span class="emoji">📧</span> ${contact.email}</div>` : ''}
         </div>
-        <button class="btn btn-small btn-primary" onclick="openMessageModal('${c.name}')">留言</button>
+        <div class="person-actions">
+          <button class="btn btn-primary btn-small" onclick="openMessageModal('${c.name}')">留言</button>
+        </div>
       `;
       container.appendChild(card);
     } catch (e) {
       const card = document.createElement('div');
-      card.className = 'classmate-card';
+      card.className = 'person-card classmate-card-item';
       card.dataset.name = c.name;
       card.innerHTML = `
-        <div class="classmate-info">
-          <h4>${c.name}</h4>
+        <div class="person-name">${c.name}</div>
+        <div class="person-contact"></div>
+        <div class="person-actions">
+          <button class="btn btn-primary btn-small" onclick="openMessageModal('${c.name}')">留言</button>
         </div>
-        <button class="btn btn-small btn-primary" onclick="openMessageModal('${c.name}')">留言</button>
       `;
       container.appendChild(card);
     }
   }
+}
+
+function filterClassmateList() {
+  const keyword = document.getElementById('classmateSearch')?.value.toLowerCase() || '';
+  document.querySelectorAll('.classmate-card-item').forEach(card => {
+    const name = card.dataset.name?.toLowerCase() || '';
+    card.style.display = name.includes(keyword) ? 'grid' : 'none';
+  });
 }
 
 function filterClassmateList() {
