@@ -9,8 +9,8 @@ const ROLE_CONFIG = {
   student: {
     tabs: [
       { id: 'photos', icon: '📷', label: '班级相册' },
+      { id: 'classmates', icon: '🎓', label: '同学回忆' },
       { id: 'teachers', icon: '👨‍🏫', label: '老师风云' },
-      { id: 'memories', icon: '💭', label: '同学回忆' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   },
@@ -232,7 +232,6 @@ function renderTabBar(tabs) {
     </button>
   `).join('');
   
-  // 绑定事件（解决点击两次才响应的问题）
   bar.querySelectorAll('.tab-item').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const tabId = btn.dataset.tab;
@@ -246,7 +245,7 @@ function switchTab(tabId) {
   document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
   
   const titles = {
-    photos: '班级相册', teachers: '老师风云', memories: '同学回忆',
+    photos: '班级相册', teachers: '老师风云', classmates: '同学回忆',
     evaluate: '评价学生', thanks: '给我的感谢', messages: '所有留言',
     users: '所有人物', profile: '我的资料'
   };
@@ -255,11 +254,10 @@ function switchTab(tabId) {
   const content = document.getElementById('contentArea');
   content.innerHTML = '<div class="empty-state">加载中...</div>';
   
-  // 根据tab加载内容
   setTimeout(() => {
     if (tabId === 'photos') renderPhotos();
     else if (tabId === 'teachers') renderTeachers();
-    else if (tabId === 'memories') renderMemories();
+    else if (tabId === 'classmates') renderClassmates();
     else if (tabId === 'evaluate') renderEvaluate();
     else if (tabId === 'thanks') renderThanks();
     else if (tabId === 'messages') renderAllMessages();
@@ -283,14 +281,23 @@ async function renderPhotos() {
       <div class="photo-grid">
     `;
     
-    if (photos.length === 0) {
-      html += '</div><div class="empty-state"><div class="empty-icon">📷</div>还没有照片</div>';
+    if (!photos || photos.length === 0) {
+      // 显示默认示例
+      html += `
+        <div class="photo-item">
+          <img src="https://picsum.photos/400/400?random=1" alt="示例照片" loading="lazy" onclick="viewPhoto('https://picsum.photos/800/800?random=1', '示例照片', '系统')">
+          <div class="photo-overlay">
+            <div class="photo-title">示例照片</div>
+            <div class="photo-uploader">系统</div>
+          </div>
+        </div>
+      `;
     } else {
       photos.forEach(p => {
         const canDelete = currentUser.role === 'admin' || p.uploaded_by === currentUser.name;
         html += `
           <div class="photo-item">
-            <img src="${p.image_url}" alt="${p.title}" loading="lazy" onclick="viewPhoto('${p.image_url}', '${p.title}', '${p.uploaded_by}')">
+            <img src="${p.image_url}" alt="${p.title}" loading="lazy" onclick="viewPhoto('${p.image_url}', '${p.title}', '${p.uploaded_by}')" onerror="this.src='https://picsum.photos/400/400?random='+Math.random()">
             ${canDelete ? `<button class="photo-delete-btn" onclick="event.stopPropagation();deletePhoto(${p.id})">🗑️</button>` : ''}
             <div class="photo-overlay">
               <div class="photo-title">${p.title}</div>
@@ -299,8 +306,8 @@ async function renderPhotos() {
           </div>
         `;
       });
-      html += '</div>';
     }
+    html += '</div>';
     
     content.innerHTML = html;
   } catch (e) {
@@ -347,7 +354,7 @@ async function doUploadPhoto() {
 function viewPhoto(url, title, uploader) {
   document.getElementById('modalTitle').textContent = title;
   document.getElementById('modalBody').innerHTML = `
-    <img src="${url}" style="width:100%;border-radius:12px;" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' viewBox=\\'0 0 100 100\\'%3E%3Crect fill=\\'%23E5E5EA\\' width=\\'100\\' height=\\'100\\'/%3E%3Ctext x=\\'50\\' y=\\'55\\' text-anchor=\\'middle\\' fill=\\'%238E8E93\\'%3E加载失败%3C/text%3E%3C/svg%3E'">
+    <img src="${url}" style="width:100%;border-radius:12px;" onerror="this.src='https://picsum.photos/400/400'">
     <p style="margin-top:12px;color:var(--gray-4);font-size:14px;">上传者：${uploader}</p>
   `;
   document.getElementById('modalFooter').innerHTML = `<button class="btn btn-primary" onclick="closeModal()">关闭</button>`;
@@ -375,7 +382,7 @@ async function renderTeachers() {
     const res = await fetch('/teachers');
     const teachers = await res.json();
     
-    if (teachers.length === 0) {
+    if (!teachers || teachers.length === 0) {
       content.innerHTML = '<div class="empty-state"><div class="empty-icon">👨‍🏫</div>暂无老师信息</div>';
       return;
     }
@@ -423,34 +430,80 @@ async function renderTeachers() {
   }
 }
 
-// ========== 同学回忆（留言） ==========
-async function renderMemories() {
+// ========== 同学回忆 ==========
+async function renderClassmates() {
   const content = document.getElementById('contentArea');
   
   try {
+    // 加载给我留言
     const res = await fetch(`/messages/${encodeURIComponent(currentUser.name)}`);
     const messages = await res.json();
     
-    if (messages.length === 0) {
-      content.innerHTML = '<div class="empty-state"><div class="empty-icon">💭</div>还没有同学给你留言</div>';
-      return;
+    let html = '';
+    
+    // 同学列表（可以给同学留言）
+    html += '<h4 style="margin:16px 0 12px;">👥 同学们</h4>';
+    html += '<div class="search-box"><input type="text" id="classmateSearch" class="input" placeholder="搜索同学..." onkeyup="filterClassmateList()"></div>';
+    html += '<div id="classmatesListContainer" class="list"></div>';
+    
+    // 给我的留言
+    html += '<h4 style="margin:24px 0 12px;">💭 给我的留言</h4>';
+    if (!messages || messages.length === 0) {
+      html += '<div class="empty-state">还没有人给你留言呢</div>';
+    } else {
+      html += '<div id="myMessagesList">';
+      messages.forEach(m => {
+        html += `
+          <div class="memory-card">
+            <div class="memory-header">
+              <span class="memory-from">${m.from_name}</span>
+              <span class="memory-time">${new Date(m.created_at).toLocaleString()}</span>
+            </div>
+            <div class="memory-content">${m.content}</div>
+          </div>
+        `;
+      });
+      html += '</div>';
     }
     
-    content.innerHTML = messages.map(m => `
-      <div class="memory-card">
-        <div class="memory-header">
-          <span class="memory-from">${m.from_name}</span>
-          <span class="memory-time">${new Date(m.created_at).toLocaleString()}</span>
-        </div>
-        <div class="memory-content">${m.content}</div>
-      </div>
-    `).join('');
+    content.innerHTML = html;
+    
+    // 渲染同学列表
+    renderClassmatesListInContainer();
   } catch (e) {
     content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
 }
 
-// ========== 给同学留言的弹窗 ==========
+function renderClassmatesListInContainer() {
+  const container = document.getElementById('classmatesListContainer');
+  if (!container) return;
+  
+  const otherClassmates = allClassmates.filter(c => c.name !== currentUser.name);
+  
+  if (otherClassmates.length === 0) {
+    container.innerHTML = '<div class="empty-state">暂无其他同学</div>';
+    return;
+  }
+  
+  container.innerHTML = otherClassmates.map(c => `
+    <div class="classmate-card" data-name="${c.name}">
+      <div class="classmate-info">
+        <h4>${c.name}</h4>
+      </div>
+      <button class="btn btn-small btn-primary" onclick="openMessageModal('${c.name}')">留言</button>
+    </div>
+  `).join('');
+}
+
+function filterClassmateList() {
+  const keyword = document.getElementById('classmateSearch')?.value.toLowerCase() || '';
+  document.querySelectorAll('.classmate-card').forEach(card => {
+    const name = card.dataset.name?.toLowerCase() || '';
+    card.style.display = name.includes(keyword) ? 'flex' : 'none';
+  });
+}
+
 function openMessageModal(toName) {
   document.getElementById('modalTitle').textContent = `给 ${toName} 留言`;
   document.getElementById('modalBody').innerHTML = `
@@ -475,6 +528,7 @@ async function sendMessage(toName) {
     });
     closeModal();
     alert('留言发送成功！');
+    renderClassmates();
   } catch (e) { alert('发送失败'); }
 }
 
@@ -533,7 +587,7 @@ async function renderThanks() {
     const res = await fetch(`/feedback/${encodeURIComponent(currentUser.name)}?type=thanks`);
     const thanks = await res.json();
     
-    if (thanks.length === 0) {
+    if (!thanks || thanks.length === 0) {
       content.innerHTML = '<div class="empty-state"><div class="empty-icon">🙏</div>还没有收到感谢</div>';
       return;
     }
@@ -566,7 +620,7 @@ async function renderAllMessages() {
       </div>
     `;
     
-    if (data.messages.length === 0) {
+    if (!data.messages || data.messages.length === 0) {
       html += '<div class="empty-state">暂无留言</div>';
     } else {
       data.messages.forEach(m => {
@@ -590,18 +644,20 @@ async function renderAllMessages() {
 }
 
 function openMessageAsModal() {
+  const allNames = [...new Set([...allClassmates.map(c => c.name), ...allTeachers.map(t => t.name)])];
+  
   document.getElementById('modalTitle').textContent = '以他人名义发留言';
   document.getElementById('modalBody').innerHTML = `
     <div class="form-group">
       <label class="form-label">发送者</label>
       <select id="msgFrom" class="input">
-        ${allClassmates.map(c => `<option value="${c.name}">${c.name}</option>`).join('')}
+        ${allNames.map(n => `<option value="${n}">${n}</option>`).join('')}
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">接收者</label>
       <select id="msgTo" class="input">
-        ${allClassmates.map(c => `<option value="${c.name}">${c.name}</option>`).join('')}
+        ${allNames.map(n => `<option value="${n}">${n}</option>`).join('')}
       </select>
     </div>
     <div class="form-group">
