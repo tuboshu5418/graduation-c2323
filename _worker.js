@@ -84,14 +84,13 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取老师
+    // 获取老师（按科目顺序：语数外物化政史音体美）
     if (path === '/teachers' && request.method === 'GET') {
       const result = await env.DB.prepare(
-        "SELECT id, name, role, avatar, subject FROM classmates WHERE role = 'teacher' ORDER BY name"
+         "SELECT id, name, role, avatar, subject FROM classmates WHERE role = 'teacher' ORDER BY CASE subject WHEN '语文' THEN 1 WHEN '数学' THEN 2 WHEN '英语' THEN 3 WHEN '物理' THEN 4 WHEN '化学' THEN 5 WHEN '政治' THEN 6 WHEN '历史' THEN 7 WHEN '音乐' THEN 8 WHEN '体育' THEN 9 WHEN '美术' THEN 10 ELSE 99 END, name"
       ).all();
       return Response.json(result.results, { headers: corsHeaders });
     }
-    
     // 获取联系方式
     if (path.startsWith('/contact/') && request.method === 'GET') {
       const name = decodeURIComponent(path.replace('/contact/', ''));
