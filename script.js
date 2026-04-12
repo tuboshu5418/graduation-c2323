@@ -3,7 +3,6 @@ const API_BASE = '';
 let currentUser = null;
 let allClassmates = [];
 let allTeachers = [];
-let allPhotos = [];
 
 // 角色配置
 const ROLE_CONFIG = {
@@ -92,6 +91,7 @@ function parseLRC(text) {
 }
 
 function updateProgress() {
+  if (!audio) return;
   const percent = (audio.currentTime / audio.duration) * 100;
   document.getElementById('progressBar').style.width = percent + '%';
   document.getElementById('currentTime').textContent = formatTime(audio.currentTime);
@@ -113,11 +113,17 @@ function formatTime(s) {
   return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
 }
 
-function togglePlay() { audio?.paused ? audio.play() : audio?.pause(); }
+function togglePlay() { 
+  if (!audio) { initMusicPlayer(); }
+  audio?.paused ? audio.play() : audio?.pause(); 
+}
+
 function seekTo(e) {
+  if (!audio) return;
   const rect = e.currentTarget.getBoundingClientRect();
   audio.currentTime = ((e.clientX - rect.left) / rect.width) * audio.duration;
 }
+
 function toggleMusic() {
   const panel = document.getElementById('musicPanel');
   if (panel.classList.contains('show')) {
@@ -127,7 +133,10 @@ function toggleMusic() {
     panel.classList.add('show');
   }
 }
-function togglePanel() { document.getElementById('musicPanel').classList.remove('show'); }
+
+function togglePanel() { 
+  document.getElementById('musicPanel').classList.remove('show'); 
+}
 
 // ========== 初始化 ==========
 async function loadClassmatesList() {
@@ -135,21 +144,21 @@ async function loadClassmatesList() {
     const res = await fetch('/classmates-list');
     const data = await res.json();
     window.allNames = data.map(d => d.name);
-  } catch (e) {}
+  } catch (e) { console.error('加载名单失败', e); }
 }
 
 async function loadClassmates() {
   try {
     const res = await fetch('/classmates');
     allClassmates = await res.json();
-  } catch (e) { console.error('加载同学失败'); }
+  } catch (e) { console.error('加载同学失败', e); }
 }
 
 async function loadTeachers() {
   try {
     const res = await fetch('/teachers');
     allTeachers = await res.json();
-  } catch (e) {}
+  } catch (e) { console.error('加载老师失败', e); }
 }
 
 function showNameList() {
@@ -161,7 +170,7 @@ function showNameList() {
       `<div class="name-option" onclick="selectName('${n}')">${n}</div>`
     ).join('');
   } else {
-    options.innerHTML = '<div class="empty-state">暂无数据</div>';
+    options.innerHTML = '<div class="empty-state">暂无数据，请刷新</div>';
   }
   
   modal.style.display = 'flex';
@@ -217,11 +226,19 @@ function showMainPage() {
 function renderTabBar(tabs) {
   const bar = document.getElementById('tabBar');
   bar.innerHTML = tabs.map(t => `
-    <button class="tab-item" onclick="switchTab('${t.id}')" data-tab="${t.id}">
+    <button class="tab-item" data-tab="${t.id}">
       <span class="tab-icon">${t.icon}</span>
       <span>${t.label}</span>
     </button>
   `).join('');
+  
+  // 绑定事件（解决点击两次才响应的问题）
+  bar.querySelectorAll('.tab-item').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tabId = btn.dataset.tab;
+      switchTab(tabId);
+    });
+  });
 }
 
 function switchTab(tabId) {
@@ -235,14 +252,20 @@ function switchTab(tabId) {
   };
   document.getElementById('pageTitle').textContent = titles[tabId] || tabId;
   
-  if (tabId === 'photos') renderPhotos();
-  else if (tabId === 'teachers') renderTeachers();
-  else if (tabId === 'memories') renderMemories();
-  else if (tabId === 'evaluate') renderEvaluate();
-  else if (tabId === 'thanks') renderThanks();
-  else if (tabId === 'messages') renderAllMessages();
-  else if (tabId === 'users') renderAllUsers();
-  else if (tabId === 'profile') renderProfile();
+  const content = document.getElementById('contentArea');
+  content.innerHTML = '<div class="empty-state">加载中...</div>';
+  
+  // 根据tab加载内容
+  setTimeout(() => {
+    if (tabId === 'photos') renderPhotos();
+    else if (tabId === 'teachers') renderTeachers();
+    else if (tabId === 'memories') renderMemories();
+    else if (tabId === 'evaluate') renderEvaluate();
+    else if (tabId === 'thanks') renderThanks();
+    else if (tabId === 'messages') renderAllMessages();
+    else if (tabId === 'users') renderAllUsers();
+    else if (tabId === 'profile') renderProfile();
+  }, 10);
 }
 
 // ========== 班级相册 ==========
@@ -252,7 +275,6 @@ async function renderPhotos() {
   try {
     const res = await fetch('/photos');
     const photos = await res.json();
-    allPhotos = photos;
     
     let html = `
       <div class="upload-btn" onclick="openUploadModal()">
@@ -269,7 +291,7 @@ async function renderPhotos() {
         html += `
           <div class="photo-item">
             <img src="${p.image_url}" alt="${p.title}" loading="lazy" onclick="viewPhoto('${p.image_url}', '${p.title}', '${p.uploaded_by}')">
-            ${canDelete ? `<button class="photo-delete-btn" onclick="event.stopPropagation();deletePhotoAdmin(${p.id})">🗑️</button>` : ''}
+            ${canDelete ? `<button class="photo-delete-btn" onclick="event.stopPropagation();deletePhoto(${p.id})">🗑️</button>` : ''}
             <div class="photo-overlay">
               <div class="photo-title">${p.title}</div>
               <div class="photo-uploader">${p.uploaded_by}</div>
@@ -282,7 +304,7 @@ async function renderPhotos() {
     
     content.innerHTML = html;
   } catch (e) {
-    content.innerHTML = '<div class="empty-state">加载失败</div>';
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
 }
 
@@ -332,7 +354,7 @@ function viewPhoto(url, title, uploader) {
   document.getElementById('modal').classList.add('show');
 }
 
-async function deletePhotoAdmin(id) {
+async function deletePhoto(id) {
   if (!confirm('确定删除这张照片吗？')) return;
   
   try {
@@ -373,7 +395,7 @@ async function renderTeachers() {
             </div>
             <div class="teacher-info">
               <h4>${t.name}</h4>
-              <div class="teacher-subject">老师</div>
+              <div class="teacher-subject">${t.subject || '老师'}</div>
             </div>
           </div>
       `;
@@ -397,11 +419,11 @@ async function renderTeachers() {
     
     content.innerHTML = html;
   } catch (e) {
-    content.innerHTML = '<div class="empty-state">加载失败</div>';
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
 }
 
-// ========== 同学回忆 ==========
+// ========== 同学回忆（留言） ==========
 async function renderMemories() {
   const content = document.getElementById('contentArea');
   
@@ -418,14 +440,42 @@ async function renderMemories() {
       <div class="memory-card">
         <div class="memory-header">
           <span class="memory-from">${m.from_name}</span>
-          <span class="memory-time">${new Date(m.created_at).toLocaleDateString()}</span>
+          <span class="memory-time">${new Date(m.created_at).toLocaleString()}</span>
         </div>
         <div class="memory-content">${m.content}</div>
       </div>
     `).join('');
   } catch (e) {
-    content.innerHTML = '<div class="empty-state">加载失败</div>';
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
+}
+
+// ========== 给同学留言的弹窗 ==========
+function openMessageModal(toName) {
+  document.getElementById('modalTitle').textContent = `给 ${toName} 留言`;
+  document.getElementById('modalBody').innerHTML = `
+    <textarea id="messageContent" class="input" rows="4" placeholder="写下你想说的话..."></textarea>
+  `;
+  document.getElementById('modalFooter').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    <button class="btn btn-primary" onclick="sendMessage('${toName}')">发送</button>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+async function sendMessage(toName) {
+  const content = document.getElementById('messageContent').value.trim();
+  if (!content) { alert('请输入内容'); return; }
+  
+  try {
+    await fetch('/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from_name: currentUser.name, to_name: toName, content })
+    });
+    closeModal();
+    alert('留言发送成功！');
+  } catch (e) { alert('发送失败'); }
 }
 
 // ========== 评价学生（老师专用） ==========
@@ -439,17 +489,19 @@ function renderEvaluate() {
   }
   
   content.innerHTML = `
-    <div class="form-group">
-      <label class="form-label">选择学生</label>
-      <select id="studentSelect" class="input">
-        ${students.map(s => `<option value="${s.name}">${s.name}</option>`).join('')}
-      </select>
+    <div class="card">
+      <div class="form-group">
+        <label class="form-label">选择学生</label>
+        <select id="studentSelect" class="input">
+          ${students.map(s => `<option value="${s.name}">${s.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">评价内容</label>
+        <textarea id="evaluateContent" class="input" rows="4" placeholder="写下对学生的评价..."></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="doEvaluate()">发表评价</button>
     </div>
-    <div class="form-group">
-      <label class="form-label">评价内容</label>
-      <textarea id="evaluateContent" class="input" rows="4" placeholder="写下对学生的评价..."></textarea>
-    </div>
-    <button class="btn btn-primary" onclick="doEvaluate()">发表评价</button>
   `;
 }
 
@@ -490,13 +542,13 @@ async function renderThanks() {
       <div class="memory-card">
         <div class="memory-header">
           <span class="memory-from">${t.from_name}</span>
-          <span class="memory-time">${new Date(t.created_at).toLocaleDateString()}</span>
+          <span class="memory-time">${new Date(t.created_at).toLocaleString()}</span>
         </div>
         <div class="memory-content">${t.content}</div>
       </div>
     `).join('');
   } catch (e) {
-    content.innerHTML = '<div class="empty-state">加载失败</div>';
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
 }
 
@@ -533,7 +585,7 @@ async function renderAllMessages() {
     
     content.innerHTML = html;
   } catch (e) {
-    content.innerHTML = '<div class="empty-state">加载失败</div>';
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
 }
 
@@ -632,7 +684,7 @@ async function renderAllUsers() {
               </div>
             </div>
             <div class="admin-actions">
-              <button class="btn-icon edit" onclick="openEditUserModal(${JSON.stringify(u).replace(/"/g, '&quot;')})">编辑</button>
+              <button class="btn-icon edit" onclick="openEditUserModal('${u.name}', '${u.role}', '${u.phone || ''}', '${u.email || ''}', '${u.wechat || ''}')">编辑</button>
               ${u.name !== currentUser.name ? `<button class="btn-icon delete" onclick="deleteUser('${u.name}')">删除</button>` : ''}
             </div>
           </div>
@@ -647,7 +699,7 @@ async function renderAllUsers() {
     
     content.innerHTML = html;
   } catch (e) {
-    content.innerHTML = '<div class="empty-state">加载失败</div>';
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
   }
 }
 
@@ -714,35 +766,33 @@ async function doAddUser() {
   } catch (e) { alert('添加失败'); }
 }
 
-async function openEditUserModal(user) {
-  const contact = await fetch(`/contact/${encodeURIComponent(user.name)}`).then(r => r.json());
-  
-  document.getElementById('modalTitle').textContent = `编辑 ${user.name}`;
+function openEditUserModal(name, role, phone, email, wechat) {
+  document.getElementById('modalTitle').textContent = `编辑 ${name}`;
   document.getElementById('modalBody').innerHTML = `
     <div class="form-group">
       <label class="form-label">角色</label>
       <select id="editUserRole" class="input">
-        <option value="student" ${user.role === 'student' ? 'selected' : ''}>同学</option>
-        <option value="teacher" ${user.role === 'teacher' ? 'selected' : ''}>老师</option>
-        <option value="admin" ${user.role === 'admin' ? 'selected' : ''}>管理员</option>
+        <option value="student" ${role === 'student' ? 'selected' : ''}>同学</option>
+        <option value="teacher" ${role === 'teacher' ? 'selected' : ''}>老师</option>
+        <option value="admin" ${role === 'admin' ? 'selected' : ''}>管理员</option>
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">手机号</label>
-      <input type="tel" id="editUserPhone" class="input" value="${contact.phone || ''}">
+      <input type="tel" id="editUserPhone" class="input" value="${phone}">
     </div>
     <div class="form-group">
       <label class="form-label">邮箱</label>
-      <input type="email" id="editUserEmail" class="input" value="${contact.email || ''}">
+      <input type="email" id="editUserEmail" class="input" value="${email}">
     </div>
     <div class="form-group">
       <label class="form-label">微信</label>
-      <input type="text" id="editUserWechat" class="input" value="${contact.wechat || ''}">
+      <input type="text" id="editUserWechat" class="input" value="${wechat}">
     </div>
   `;
   document.getElementById('modalFooter').innerHTML = `
     <button class="btn btn-secondary" onclick="closeModal()">取消</button>
-    <button class="btn btn-primary" onclick="doEditUser('${user.name}')">保存</button>
+    <button class="btn btn-primary" onclick="doEditUser('${name}')">保存</button>
   `;
   document.getElementById('modal').classList.add('show');
 }
@@ -894,6 +944,9 @@ async function changePassword() {
     if (data.success) {
       result.textContent = '✅ 密码修改成功';
       result.style.color = 'var(--success)';
+      document.getElementById('oldPassword').value = '';
+      document.getElementById('newPassword').value = '';
+      document.getElementById('confirmPassword').value = '';
     } else {
       result.textContent = data.error;
     }
