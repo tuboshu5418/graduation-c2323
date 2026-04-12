@@ -228,7 +228,105 @@ body {
   font-size: 14px; 
 }
 
-/* 同学卡片（用于同学回忆列表） */
+/* 三栏人物卡片 */
+.person-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--gray-2);
+  display: grid;
+  grid-template-columns: 1fr 2fr 80px;
+  gap: 12px;
+  align-items: center;
+}
+
+.person-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-6);
+  word-break: break-word;
+}
+
+.person-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.contact-line {
+  font-size: 13px;
+  color: var(--gray-5);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-line .emoji {
+  min-width: 20px;
+  font-size: 14px;
+}
+
+.person-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.person-actions .btn-small {
+  padding: 6px 8px;
+  font-size: 12px;
+  width: 100%;
+}
+
+/* 老师卡片中显示科目 */
+.teacher-subject-tag {
+  display: inline-block;
+  background: var(--primary-light);
+  color: var(--primary);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-left: 6px;
+}
+
+/* 搜索框 */
+.global-search-box {
+  margin-bottom: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--background);
+  padding-bottom: 8px;
+}
+
+.global-search-box .input {
+  background: var(--surface);
+  padding-left: 42px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ADB5BD'%3E%3Cpath d='M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 14px center;
+  background-size: 18px;
+}
+
+/* 移动端适配三栏卡片 */
+@media (max-width: 480px) {
+  .person-card {
+    grid-template-columns: 1fr 1.5fr 70px;
+    gap: 8px;
+    padding: 12px;
+  }
+  .person-name { font-size: 15px; }
+  .contact-line { font-size: 11px; }
+  .person-actions .btn-small { padding: 5px 4px; font-size: 11px; }
+}
+
+/* 旧版同学卡片（保留兼容） */
 .classmate-card {
   background: var(--surface);
   border-radius: var(--radius-md);
@@ -434,7 +532,7 @@ body {
 .stat-value { font-size: 36px; font-weight: 700; color: var(--primary); line-height: 1.2; }
 .stat-label { font-size: 14px; color: var(--gray-4); margin-top: 4px; }
 
-/* 搜索框 */
+/* 搜索框（旧版兼容） */
 .search-box { margin-bottom: 16px; }
 
 /* 按钮 */
