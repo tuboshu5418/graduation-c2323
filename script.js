@@ -475,7 +475,7 @@ async function renderClassmates() {
   }
 }
 
-function renderClassmatesListInContainer() {
+async function renderClassmatesListInContainer() {
   const container = document.getElementById('classmatesListContainer');
   if (!container) return;
   
@@ -486,14 +486,47 @@ function renderClassmatesListInContainer() {
     return;
   }
   
-  container.innerHTML = otherClassmates.map(c => `
-    <div class="classmate-card" data-name="${c.name}">
-      <div class="classmate-info">
-        <h4>${c.name}</h4>
-      </div>
-      <button class="btn btn-small btn-primary" onclick="openMessageModal('${c.name}')">留言</button>
-    </div>
-  `).join('');
+  // 清空容器
+  container.innerHTML = '';
+  
+  // 逐个渲染，获取联系方式
+  for (const c of otherClassmates) {
+    try {
+      const contactRes = await fetch(`/contact/${encodeURIComponent(c.name)}`);
+      const contact = await contactRes.json();
+      
+      const card = document.createElement('div');
+      card.className = 'classmate-card';
+      card.dataset.name = c.name;
+      
+      let contactHtml = '';
+      if (contact.phone) contactHtml += `<span>📱 ${contact.phone}</span>`;
+      if (contact.email) contactHtml += `<span>📧 ${contact.email}</span>`;
+      if (contact.wechat) contactHtml += `<span>💬 ${contact.wechat}</span>`;
+      
+      card.innerHTML = `
+        <div class="classmate-info">
+          <h4>${c.name}</h4>
+          ${contactHtml ? `<div class="contact">${contactHtml}</div>` : ''}
+        </div>
+        <button class="btn btn-small btn-primary" onclick="openMessageModal('${c.name}')">留言</button>
+      `;
+      container.appendChild(card);
+    } catch (e) {
+      console.error(`加载 ${c.name} 联系方式失败`, e);
+      // 即使失败也显示基本信息
+      const card = document.createElement('div');
+      card.className = 'classmate-card';
+      card.dataset.name = c.name;
+      card.innerHTML = `
+        <div class="classmate-info">
+          <h4>${c.name}</h4>
+        </div>
+        <button class="btn btn-small btn-primary" onclick="openMessageModal('${c.name}')">留言</button>
+      `;
+      container.appendChild(card);
+    }
+  }
 }
 
 function filterClassmateList() {
