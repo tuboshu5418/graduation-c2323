@@ -9,8 +9,9 @@ const ROLE_CONFIG = {
   student: {
     tabs: [
       { id: 'photos', icon: '📷', label: '班级相册' },
-      { id: 'classmates', icon: '🎓', label: '同学回忆' },
-      { id: 'teachers', icon: '👨‍🏫', label: '老师风云' },
+      { id: 'classmates', icon: '🎓', label: '同学录' },
+      { id: 'teachers', icon: '👨‍🏫', label: '老师' },
+      { id: 'myMessages', icon: '💬', label: '我的留言' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   },
@@ -18,7 +19,8 @@ const ROLE_CONFIG = {
     tabs: [
       { id: 'photos', icon: '📷', label: '班级相册' },
       { id: 'evaluate', icon: '📝', label: '评价学生' },
-      { id: 'thanks', icon: '🙏', label: '给我的感谢' },
+      { id: 'myMessages', icon: '💬', label: '我的留言' },
+      { id: 'thanks', icon: '🙏', label: '感谢' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   },
@@ -27,6 +29,7 @@ const ROLE_CONFIG = {
       { id: 'photos', icon: '📷', label: '班级相册' },
       { id: 'messages', icon: '💬', label: '所有留言' },
       { id: 'users', icon: '👥', label: '所有人物' },
+      { id: 'feedbacks', icon: '📊', label: '评价/感谢' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   }
@@ -245,9 +248,10 @@ function switchTab(tabId) {
   document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
   
   const titles = {
-    photos: '班级相册', teachers: '老师风云', classmates: '同学回忆',
+    photos: '班级相册', teachers: '老师', classmates: '同学录',
     evaluate: '评价学生', thanks: '给我的感谢', messages: '所有留言',
-    users: '所有人物', profile: '我的资料'
+    users: '所有人物', profile: '我的资料', myMessages: '我的留言',
+    feedbacks: '评价与感谢'
   };
   document.getElementById('pageTitle').textContent = titles[tabId] || tabId;
   
@@ -258,12 +262,46 @@ function switchTab(tabId) {
     if (tabId === 'photos') renderPhotos();
     else if (tabId === 'teachers') renderTeachers();
     else if (tabId === 'classmates') renderClassmates();
+    else if (tabId === 'myMessages') renderMyMessages();
     else if (tabId === 'evaluate') renderEvaluate();
     else if (tabId === 'thanks') renderThanks();
     else if (tabId === 'messages') renderAllMessages();
     else if (tabId === 'users') renderAllUsers();
+    else if (tabId === 'feedbacks') renderAllFeedbacks();
     else if (tabId === 'profile') renderProfile();
   }, 10);
+}
+
+// ========== 我的留言（学生和老师通用） ==========
+async function renderMyMessages() {
+  const content = document.getElementById('contentArea');
+  
+  try {
+    const res = await fetch(`/messages/${encodeURIComponent(currentUser.name)}`);
+    const messages = await res.json();
+    
+    if (!messages || messages.length === 0) {
+      content.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div>还没有人给你留言</div>';
+      return;
+    }
+    
+    let html = '<h4 style="margin-bottom:16px;">💭 别人对我说的话</h4>';
+    messages.forEach(m => {
+      html += `
+        <div class="memory-card">
+          <div class="memory-header">
+            <span class="memory-from">${m.from_name}</span>
+            <span class="memory-time">${new Date(m.created_at).toLocaleString()}</span>
+          </div>
+          <div class="memory-content">${m.content}</div>
+        </div>
+      `;
+    });
+    
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
+  }
 }
 
 // ========== 班级相册 ==========
@@ -282,7 +320,6 @@ async function renderPhotos() {
     `;
     
     if (!photos || photos.length === 0) {
-      // 显示默认示例
       html += `
         <div class="photo-item">
           <img src="https://picsum.photos/400/400?random=1" alt="示例照片" loading="lazy" onclick="viewPhoto('https://picsum.photos/800/800?random=1', '示例照片', '系统')">
@@ -374,7 +411,7 @@ async function deletePhoto(id) {
   } catch (e) { alert('删除失败'); }
 }
 
-// ========== 老师风云 ==========
+// ========== 老师列表 ==========
 async function renderTeachers() {
   const content = document.getElementById('contentArea');
   
@@ -430,49 +467,15 @@ async function renderTeachers() {
   }
 }
 
-// ========== 同学回忆 ==========
+// ========== 同学录 ==========
 async function renderClassmates() {
   const content = document.getElementById('contentArea');
   
-  try {
-    // 加载给我留言
-    const res = await fetch(`/messages/${encodeURIComponent(currentUser.name)}`);
-    const messages = await res.json();
-    
-    let html = '';
-    
-    // 同学列表（可以给同学留言）
-    html += '<h4 style="margin:16px 0 12px;">👥 同学们</h4>';
-    html += '<div class="search-box"><input type="text" id="classmateSearch" class="input" placeholder="搜索同学..." onkeyup="filterClassmateList()"></div>';
-    html += '<div id="classmatesListContainer" class="list"></div>';
-    
-    // 给我的留言
-    html += '<h4 style="margin:24px 0 12px;">💭 给我的留言</h4>';
-    if (!messages || messages.length === 0) {
-      html += '<div class="empty-state">还没有人给你留言呢</div>';
-    } else {
-      html += '<div id="myMessagesList">';
-      messages.forEach(m => {
-        html += `
-          <div class="memory-card">
-            <div class="memory-header">
-              <span class="memory-from">${m.from_name}</span>
-              <span class="memory-time">${new Date(m.created_at).toLocaleString()}</span>
-            </div>
-            <div class="memory-content">${m.content}</div>
-          </div>
-        `;
-      });
-      html += '</div>';
-    }
-    
-    content.innerHTML = html;
-    
-    // 渲染同学列表
-    renderClassmatesListInContainer();
-  } catch (e) {
-    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
-  }
+  let html = '<div class="search-box"><input type="text" id="classmateSearch" class="input" placeholder="搜索同学..." onkeyup="filterClassmateList()"></div>';
+  html += '<div id="classmatesListContainer" class="list"></div>';
+  
+  content.innerHTML = html;
+  renderClassmatesListInContainer();
 }
 
 async function renderClassmatesListInContainer() {
@@ -486,10 +489,8 @@ async function renderClassmatesListInContainer() {
     return;
   }
   
-  // 清空容器
   container.innerHTML = '';
   
-  // 逐个渲染，获取联系方式
   for (const c of otherClassmates) {
     try {
       const contactRes = await fetch(`/contact/${encodeURIComponent(c.name)}`);
@@ -513,8 +514,6 @@ async function renderClassmatesListInContainer() {
       `;
       container.appendChild(card);
     } catch (e) {
-      console.error(`加载 ${c.name} 联系方式失败`, e);
-      // 即使失败也显示基本信息
       const card = document.createElement('div');
       card.className = 'classmate-card';
       card.dataset.name = c.name;
@@ -561,7 +560,6 @@ async function sendMessage(toName) {
     });
     closeModal();
     alert('留言发送成功！');
-    renderClassmates();
   } catch (e) { alert('发送失败'); }
 }
 
@@ -782,6 +780,39 @@ async function renderAllUsers() {
             ${u.email ? `<div class="card-detail-item"><span>📧</span> ${u.email}</div>` : ''}
             ${u.wechat ? `<div class="card-detail-item"><span>💬</span> ${u.wechat}</div>` : ''}
           </div>
+        </div>
+      `;
+    });
+    
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<div class="empty-state">加载失败，请重试</div>';
+  }
+}
+
+// ========== 所有评价/感谢（管理员专用） ==========
+async function renderAllFeedbacks() {
+  const content = document.getElementById('contentArea');
+  
+  try {
+    const res = await fetch(`/admin/all-data?requester=${currentUser.name}`);
+    const data = await res.json();
+    
+    if (!data.feedbacks || data.feedbacks.length === 0) {
+      content.innerHTML = '<div class="empty-state">暂无评价或感谢</div>';
+      return;
+    }
+    
+    let html = '<h4 style="margin-bottom:16px;">📊 所有评价与感谢</h4>';
+    data.feedbacks.forEach(f => {
+      html += `
+        <div class="memory-card">
+          <div class="memory-header">
+            <span class="memory-from">${f.from_name} (${f.from_role === 'student' ? '同学' : '老师'}) → ${f.to_name} (${f.to_role === 'student' ? '同学' : '老师'})</span>
+            <span class="memory-time">${new Date(f.created_at).toLocaleString()}</span>
+          </div>
+          <div style="margin-bottom:6px;"><span class="role-tag ${f.type}">${f.type === 'evaluation' ? '📝 评价' : '🙏 感谢'}</span></div>
+          <div class="memory-content">${f.content}</div>
         </div>
       `;
     });
