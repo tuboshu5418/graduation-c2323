@@ -733,3 +733,52 @@ textarea.input { resize: vertical; min-height: 100px; }
   transition: all 0.15s;
 }
 .filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+
+/* 签名墙 */
+.signature-wall img {
+  transition: transform 0.2s;
+  cursor: pointer;
+}
+.signature-wall img:active {
+  transform: scale(0.98);
+}
+
+/* 歌单 */
+.song-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.song-item {
+  background: var(--surface);
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gray-2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.song-item:hover {
+  background: var(--gray-1);
+  border-color: var(--primary);
+}
+.song-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.song-name {
+  font-weight: 500;
+  color: var(--gray-6);
+  font-size: 15px;
+}
+.song-uploader {
+  font-size: 12px;
+  color: var(--gray-4);
+}
+.song-play {
+  font-size: 20px;
+  color: var(--primary);
+}
