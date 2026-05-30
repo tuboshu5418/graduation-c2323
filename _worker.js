@@ -20,7 +20,7 @@ export default {
       return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
     
-    // 登录
+    // ========== 登录 ==========
     if (path === '/login' && request.method === 'POST') {
       const { name, password } = await request.json();
       const passwordHash = await sha256(password);
@@ -38,7 +38,7 @@ export default {
       return Response.json({ success: false, error: '姓名或密码错误' }, { status: 401, headers: corsHeaders });
     }
     
-    // 修改密码
+    // ========== 修改密码 ==========
     if (path === '/change-password' && request.method === 'PUT') {
       const { name, oldPassword, newPassword } = await request.json();
       const oldHash = await sha256(oldPassword);
@@ -59,7 +59,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 更新头像
+    // ========== 更新头像 ==========
     if (path === '/update-avatar' && request.method === 'PUT') {
       const { name, avatar } = await request.json();
       await env.DB.prepare(
@@ -68,39 +68,49 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 获取同学列表（用于下拉框）
+    // ========== 更新座右铭 ==========
+    if (path === '/update-motto' && request.method === 'PUT') {
+      const { name, motto } = await request.json();
+      await env.DB.prepare(
+        'UPDATE classmates SET motto = ?, updated_at = datetime("now") WHERE name = ?'
+      ).bind(motto, name).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // ========== 获取同学列表 ==========
     if (path === '/classmates-list' && request.method === 'GET') {
       const result = await env.DB.prepare(
-        'SELECT name FROM classmates ORDER BY name'
+        "SELECT name FROM classmates WHERE role IN ('student', 'admin') ORDER BY name"
       ).all();
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取同学（学生+admin）
+    // ========== 获取同学 ==========
     if (path === '/classmates' && request.method === 'GET') {
       const result = await env.DB.prepare(
-        "SELECT id, name, avatar FROM classmates WHERE role IN ('student', 'admin') ORDER BY name"
+        "SELECT id, name, avatar FROM classmates WHERE role = 'student' ORDER BY name"
       ).all();
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取老师（按科目顺序：语数外物化政史音体美）
+    // ========== 获取老师 ==========
     if (path === '/teachers' && request.method === 'GET') {
       const result = await env.DB.prepare(
-         "SELECT id, name, role, avatar, subject FROM classmates WHERE role = 'teacher' ORDER BY CASE subject WHEN '语文' THEN 1 WHEN '数学' THEN 2 WHEN '英语' THEN 3 WHEN '物理' THEN 4 WHEN '化学' THEN 5 WHEN '政治' THEN 6 WHEN '历史' THEN 7 WHEN '音乐' THEN 8 WHEN '体育' THEN 9 WHEN '美术' THEN 10 ELSE 99 END, name"
+        "SELECT id, name, role, avatar, subject FROM classmates WHERE role = 'teacher' ORDER BY CASE subject WHEN '语文' THEN 1 WHEN '数学' THEN 2 WHEN '英语' THEN 3 WHEN '物理' THEN 4 WHEN '化学' THEN 5 WHEN '政治' THEN 6 WHEN '历史' THEN 7 WHEN '音乐' THEN 8 WHEN '体育' THEN 9 WHEN '美术' THEN 10 ELSE 99 END, name"
       ).all();
       return Response.json(result.results, { headers: corsHeaders });
     }
-    // 获取联系方式
+    
+    // ========== 获取联系方式（含座右铭） ==========
     if (path.startsWith('/contact/') && request.method === 'GET') {
       const name = decodeURIComponent(path.replace('/contact/', ''));
       const result = await env.DB.prepare(
-        'SELECT phone, email, wechat, role, avatar, subject FROM classmates WHERE name = ?'
+        'SELECT phone, email, wechat, motto, role, avatar, subject FROM classmates WHERE name = ?'
       ).bind(name).first();
       return Response.json(result || {}, { headers: corsHeaders });
     }
     
-    // 更新联系方式
+    // ========== 更新联系方式 ==========
     if (path === '/update-contact' && request.method === 'PUT') {
       const { name, phone, email, wechat } = await request.json();
       await env.DB.prepare(
@@ -109,7 +119,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 管理员更新任意用户信息
+    // ========== 管理员更新用户 ==========
     if (path === '/admin/update-user' && request.method === 'PUT') {
       const { requester, targetName, phone, email, wechat, role } = await request.json();
       
@@ -126,7 +136,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 管理员添加用户
+    // ========== 管理员添加用户 ==========
     if (path === '/admin/add-user' && request.method === 'POST') {
       const { requester, name, role, phone, email, wechat } = await request.json();
       
@@ -144,7 +154,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 管理员删除用户
+    // ========== 管理员删除用户 ==========
     if (path === '/admin/delete-user' && request.method === 'DELETE') {
       const { requester, targetName } = await request.json();
       
@@ -167,7 +177,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 获取留言
+    // ========== 获取留言 ==========
     if (path.startsWith('/messages/') && request.method === 'GET') {
       const toName = decodeURIComponent(path.replace('/messages/', ''));
       const result = await env.DB.prepare(
@@ -176,7 +186,7 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 发表留言
+    // ========== 发表留言 ==========
     if (path === '/messages' && request.method === 'POST') {
       const { from_name, to_name, content, requester } = await request.json();
       
@@ -195,7 +205,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 删除留言（管理员）
+    // ========== 删除留言 ==========
     if (path === '/admin/delete-message' && request.method === 'DELETE') {
       const { requester, messageId } = await request.json();
       
@@ -210,7 +220,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 发表评价/感谢
+    // ========== 发表评价/感谢 ==========
     if (path === '/feedback' && request.method === 'POST') {
       const { from_name, from_role, to_name, to_role, content, type } = await request.json();
       await env.DB.prepare(
@@ -219,7 +229,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 获取评价/感谢
+    // ========== 获取评价/感谢 ==========
     if (path.startsWith('/feedback/') && request.method === 'GET') {
       const toName = decodeURIComponent(path.replace('/feedback/', ''));
       const urlParams = new URL(request.url).searchParams;
@@ -239,7 +249,7 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 获取所有数据（管理员）
+    // ========== 管理员获取所有数据 ==========
     if (path === '/admin/all-data' && request.method === 'GET') {
       const urlParams = new URL(request.url).searchParams;
       const requester = urlParams.get('requester');
@@ -253,7 +263,7 @@ export default {
       }
       
       const users = await env.DB.prepare(
-        'SELECT id, name, role, phone, email, wechat, avatar, subject, updated_at FROM classmates ORDER BY name'
+        'SELECT id, name, role, phone, email, wechat, avatar, subject, motto, updated_at FROM classmates ORDER BY name'
       ).all();
       
       const messages = await env.DB.prepare(
@@ -276,7 +286,7 @@ export default {
       }, { headers: corsHeaders });
     }
     
-    // 上传照片
+    // ========== 上传照片 ==========
     if (path === '/photos' && request.method === 'POST') {
       const { uploaded_by, title, description, image_url } = await request.json();
       await env.DB.prepare(
@@ -285,7 +295,7 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // 获取照片
+    // ========== 获取照片 ==========
     if (path === '/photos' && request.method === 'GET') {
       const result = await env.DB.prepare(
         'SELECT id, uploaded_by, title, description, image_url, created_at FROM photos ORDER BY created_at DESC'
@@ -293,7 +303,7 @@ export default {
       return Response.json(result.results, { headers: corsHeaders });
     }
     
-    // 删除照片
+    // ========== 删除照片 ==========
     if (path.startsWith('/photos/') && request.method === 'DELETE') {
       const photoId = path.replace('/photos/', '');
       const { requester } = await request.json();
@@ -315,6 +325,59 @@ export default {
       }
       
       await env.DB.prepare('DELETE FROM photos WHERE id = ?').bind(photoId).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // ========== 签名墙：上传 ==========
+    if (path === '/signature-wall' && request.method === 'POST') {
+      const { image_data } = await request.json();
+      
+      if (image_data.length > 1000000) {
+        return Response.json({ error: '图片太大，请缩小后再上传' }, { status: 400, headers: corsHeaders });
+      }
+      
+      await env.DB.prepare(
+        'INSERT OR REPLACE INTO signature_wall (id, image_data, updated_at) VALUES (1, ?, datetime("now"))'
+      ).bind(image_data).run();
+      
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // ========== 签名墙：获取 ==========
+    if (path === '/signature-wall' && request.method === 'GET') {
+      const result = await env.DB.prepare(
+        'SELECT image_data, updated_at FROM signature_wall WHERE id = 1'
+      ).first();
+      
+      if (result) {
+        return Response.json({ 
+          image_data: result.image_data,
+          updated_at: result.updated_at 
+        }, { headers: corsHeaders });
+      }
+      return Response.json({ image_data: null }, { headers: corsHeaders });
+    }
+    
+    // ========== 歌单：获取歌曲列表 ==========
+    if (path === '/songs' && request.method === 'GET') {
+      const result = await env.DB.prepare(
+        'SELECT id, name, filename, uploaded_by, created_at FROM songs ORDER BY created_at DESC'
+      ).all();
+      return Response.json(result.results, { headers: corsHeaders });
+    }
+    
+    // ========== 歌单：添加歌曲 ==========
+    if (path === '/songs' && request.method === 'POST') {
+      const { name, filename, uploaded_by } = await request.json();
+      
+      if (!name || !filename) {
+        return Response.json({ error: '缺少歌曲信息' }, { status: 400, headers: corsHeaders });
+      }
+      
+      await env.DB.prepare(
+        'INSERT INTO songs (name, filename, uploaded_by, created_at) VALUES (?, ?, ?, datetime("now"))'
+      ).bind(name, filename, uploaded_by).run();
+      
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
