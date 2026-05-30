@@ -8,28 +8,34 @@ let allTeachers = [];
 const ROLE_CONFIG = {
   student: {
     tabs: [
-      { id: 'photos', icon: '📷', label: '班级相册' },
+      { id: 'photos', icon: '📷', label: '相册' },
       { id: 'classmates', icon: '🎓', label: '同学录' },
       { id: 'teachers', icon: '👨‍🏫', label: '老师' },
-      { id: 'myMessages', icon: '💬', label: '我的留言' },
+      { id: 'signature', icon: '✍️', label: '签名墙' },
+      { id: 'myMessages', icon: '💬', label: '留言' },
+      { id: 'songs', icon: '🎵', label: '歌单' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   },
   teacher: {
     tabs: [
-      { id: 'photos', icon: '📷', label: '班级相册' },
+      { id: 'photos', icon: '📷', label: '相册' },
       { id: 'evaluate', icon: '📝', label: '评价学生' },
-      { id: 'myMessages', icon: '💬', label: '我的留言' },
+      { id: 'myMessages', icon: '💬', label: '留言' },
       { id: 'thanks', icon: '🙏', label: '感谢' },
+      { id: 'signature', icon: '✍️', label: '签名墙' },
+      { id: 'songs', icon: '🎵', label: '歌单' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   },
   admin: {
     tabs: [
-      { id: 'photos', icon: '📷', label: '班级相册' },
+      { id: 'photos', icon: '📷', label: '相册' },
       { id: 'messages', icon: '💬', label: '所有留言' },
       { id: 'users', icon: '👥', label: '所有人物' },
       { id: 'feedbacks', icon: '📊', label: '评价/感谢' },
+      { id: 'signature', icon: '✍️', label: '签名墙' },
+      { id: 'songs', icon: '🎵', label: '歌单' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   }
@@ -251,7 +257,7 @@ function switchTab(tabId) {
     photos: '班级相册', teachers: '老师', classmates: '同学录',
     evaluate: '评价学生', thanks: '给我的感谢', messages: '所有留言',
     users: '所有人物', profile: '我的资料', myMessages: '我的留言',
-    feedbacks: '评价与感谢'
+    feedbacks: '评价与感谢', signature: '签名墙', songs: '歌单'
   };
   document.getElementById('pageTitle').textContent = titles[tabId] || tabId;
   
@@ -268,11 +274,13 @@ function switchTab(tabId) {
     else if (tabId === 'messages') renderAllMessages();
     else if (tabId === 'users') renderAllUsers();
     else if (tabId === 'feedbacks') renderAllFeedbacks();
+    else if (tabId === 'signature') renderSignature();
+    else if (tabId === 'songs') renderSongs();
     else if (tabId === 'profile') renderProfile();
   }, 10);
 }
 
-// ========== 我的留言（学生和老师通用） ==========
+// ========== 我的留言 ==========
 async function renderMyMessages() {
   const content = document.getElementById('contentArea');
   
@@ -433,7 +441,6 @@ async function renderTeachers() {
     
     content.innerHTML = html;
     
-    // 渲染老师卡片
     const container = document.getElementById('teachersListContainer');
     for (const t of teachers) {
       const contactRes = await fetch(`/contact/${encodeURIComponent(t.name)}`);
@@ -497,7 +504,6 @@ async function renderClassmatesListInContainer() {
   const container = document.getElementById('classmatesListContainer');
   if (!container) return;
   
-  // 按拼音排序
   const otherClassmates = allClassmates
     .filter(c => c.name !== currentUser.name)
     .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
@@ -549,16 +555,9 @@ async function renderClassmatesListInContainer() {
 function filterClassmateList() {
   const keyword = document.getElementById('classmateSearch')?.value.toLowerCase() || '';
   document.querySelectorAll('.classmate-card-item').forEach(card => {
-    const name = card.dataset.name?.toLowerCase() || '';
-    card.style.display = name.includes(keyword) ? 'grid' : 'none';
-  });
-}
-
-function filterClassmateList() {
-  const keyword = document.getElementById('classmateSearch')?.value.toLowerCase() || '';
-  document.querySelectorAll('.classmate-card').forEach(card => {
-    const name = card.dataset.name?.toLowerCase() || '';
-    card.style.display = name.includes(keyword) ? 'flex' : 'none';
+    const name = card.querySelector('.person-name')?.textContent.toLowerCase() || '';
+    const contact = card.querySelector('.person-contact')?.textContent.toLowerCase() || '';
+    card.style.display = (name + contact).includes(keyword) ? 'grid' : 'none';
   });
 }
 
@@ -987,13 +986,231 @@ async function deleteUser(name) {
   } catch (e) { alert('删除失败'); }
 }
 
+// ========== 签名墙 ==========
+async function renderSignature() {
+  const content = document.getElementById('contentArea');
+  
+  try {
+    const res = await fetch('/signature-wall');
+    const data = await res.json();
+    
+    let html = '<h4 style="margin:16px 0 12px;">✍️ 班级签名墙</h4>';
+    
+    if (data.image_data) {
+      html += `
+        <div class="signature-wall">
+          <img src="${data.image_data}" alt="签名墙" style="width:100%;border-radius:12px;box-shadow:var(--shadow-md);" onclick="viewSignatureFull('${data.image_data}')">
+          <p style="text-align:center;color:var(--gray-4);font-size:12px;margin-top:8px;">
+            最后更新：${new Date(data.updated_at).toLocaleString()}
+          </p>
+        </div>
+      `;
+    } else {
+      html += '<div class="empty-state"><div class="empty-icon">✍️</div>还没有签名墙</div>';
+    }
+    
+    html += `
+      <div style="margin-top:16px;">
+        <button class="btn btn-primary" onclick="openSignatureModal()">🖼️ 上传签名墙</button>
+        <p style="font-size:12px;color:var(--gray-4);margin-top:8px;text-align:center;">
+          推荐尺寸 1600×900，支持彩色图片
+        </p>
+      </div>
+    `;
+    
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<div class="empty-state">加载失败</div>';
+  }
+}
+
+function viewSignatureFull(dataUrl) {
+  document.getElementById('modalTitle').textContent = '班级签名墙';
+  document.getElementById('modalBody').innerHTML = `
+    <img src="${dataUrl}" style="width:100%;border-radius:12px;">
+  `;
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-primary" onclick="closeModal()">关闭</button>';
+  document.getElementById('modal').classList.add('show');
+}
+
+function openSignatureModal() {
+  document.getElementById('modalTitle').textContent = '上传签名墙（推荐 1600×900）';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group">
+      <label class="form-label">选择图片</label>
+      <input type="file" id="signatureFile" class="input" accept="image/*">
+    </div>
+    <canvas id="signatureCanvas" style="display:none;"></canvas>
+  `;
+  document.getElementById('modalFooter').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    <button class="btn btn-primary" onclick="doUploadSignature()">上传</button>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+async function doUploadSignature() {
+  const fileInput = document.getElementById('signatureFile');
+  const file = fileInput.files[0];
+  
+  if (!file) { alert('请选择图片'); return; }
+  
+  const canvas = document.getElementById('signatureCanvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 800;
+  canvas.height = 450;
+  
+  const img = new Image();
+  img.onload = async () => {
+    ctx.drawImage(img, 0, 0, 800, 450);
+    const base64 = canvas.toDataURL('image/jpeg', 0.9);
+    
+    try {
+      const res = await fetch('/signature-wall', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_data: base64 })
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        closeModal();
+        renderSignature();
+      } else {
+        alert(data.error || '上传失败');
+      }
+    } catch (e) {
+      alert('上传失败');
+    }
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+// ========== 歌单 ==========
+async function renderSongs() {
+  const content = document.getElementById('contentArea');
+  
+  try {
+    const res = await fetch('/songs');
+    const songs = await res.json();
+    
+    let html = `
+      <div style="margin-bottom:16px;">
+        <button class="btn btn-primary" onclick="openAddSongModal()">🎵 添加歌曲</button>
+      </div>
+      <h4 style="margin:16px 0 12px;">🎧 歌单</h4>
+    `;
+    
+    if (!songs || songs.length === 0) {
+      html += '<div class="empty-state"><div class="empty-icon">🎵</div>歌单为空，快来添加吧</div>';
+    } else {
+      html += '<div class="song-list">';
+      songs.forEach(s => {
+        html += `
+          <div class="song-item" onclick="playSong('${s.filename}', '${s.name}')">
+            <div class="song-info">
+              <span class="song-name">🎵 ${s.name}</span>
+              <span class="song-uploader">上传者：${s.uploaded_by}</span>
+            </div>
+            <span class="song-play">▶️</span>
+          </div>
+        `;
+      });
+      html += '</div>';
+    }
+    
+    html += `
+      <p style="font-size:12px;color:var(--gray-4);margin-top:16px;text-align:center;">
+        上传歌曲请将 MP3 和 LRC 文件放入 songs/歌曲名/ 目录
+      </p>
+    `;
+    
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<div class="empty-state">加载失败</div>';
+  }
+}
+
+function openAddSongModal() {
+  document.getElementById('modalTitle').textContent = '添加歌曲到歌单';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group">
+      <label class="form-label">歌曲名称</label>
+      <input type="text" id="songName" class="input" placeholder="例如：干杯">
+    </div>
+    <div class="form-group">
+      <label class="form-label">文件夹名</label>
+      <input type="text" id="songFolder" class="input" placeholder="例如：ganbei（对应 songs/ganbei/）">
+    </div>
+    <p style="font-size:12px;color:var(--gray-4);">
+      请确保 songs/文件夹名/ 目录下有 歌曲名.mp3 和 歌曲名.lrc 文件
+    </p>
+  `;
+  document.getElementById('modalFooter').innerHTML = `
+    <button class="btn btn-secondary" onclick="closeModal()">取消</button>
+    <button class="btn btn-primary" onclick="doAddSong()">添加</button>
+  `;
+  document.getElementById('modal').classList.add('show');
+}
+
+async function doAddSong() {
+  const name = document.getElementById('songName').value.trim();
+  const folder = document.getElementById('songFolder').value.trim();
+  
+  if (!name || !folder) { alert('请填写完整'); return; }
+  
+  try {
+    await fetch('/songs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, filename: folder, uploaded_by: currentUser.name })
+    });
+    closeModal();
+    renderSongs();
+  } catch (e) { alert('添加失败'); }
+}
+
+function playSong(folder, name) {
+  if (audio) {
+    audio.pause();
+  }
+  
+  audio = new Audio(`/songs/${folder}/${name}.mp3`);
+  
+  const panel = document.getElementById('musicPanel');
+  document.querySelector('.music-title').textContent = name;
+  document.querySelector('.music-artist').textContent = '歌单播放';
+  
+  fetch(`/songs/${folder}/${name}.lrc`)
+    .then(res => res.text())
+    .then(text => parseLRC(text))
+    .catch(() => { document.getElementById('lyricsContent').innerHTML = '暂无歌词'; });
+  
+  audio.addEventListener('timeupdate', updateProgress);
+  audio.addEventListener('play', () => {
+    document.querySelector('#playBtn svg').innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+    document.getElementById('musicToggle').classList.add('playing');
+  });
+  audio.addEventListener('pause', () => {
+    document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>';
+    document.getElementById('musicToggle').classList.remove('playing');
+  });
+  audio.addEventListener('ended', () => {
+    document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>';
+    document.getElementById('musicToggle').classList.remove('playing');
+  });
+  
+  audio.play();
+  panel.classList.add('show');
+}
+
 // ========== 个人资料 ==========
 function renderProfile() {
   const content = document.getElementById('contentArea');
   const avatar = currentUser.avatar || '😊';
   const isEmoji = avatar.length <= 2 || !avatar.startsWith('http');
   
-  content.innerHTML = `
+  let html = `
     <div class="card" style="text-align:center;">
       <div class="avatar-large" onclick="openAvatarModal()">
         ${isEmoji ? avatar : `<img src="${avatar}" class="avatar-img" alt="${currentUser.name}">`}
@@ -1003,6 +1220,15 @@ function renderProfile() {
         ${currentUser.role === 'admin' ? '👑 管理员' : (currentUser.role === 'teacher' ? '👨‍🏫 老师' : '🎓 同学')}
       </div>
       <button class="btn btn-outline btn-small" onclick="openAvatarModal()">更换头像</button>
+    </div>
+    
+    <div class="card">
+      <h4 style="margin-bottom:16px;">💬 座右铭</h4>
+      <div class="form-group">
+        <input type="text" id="profileMotto" class="input" placeholder="写下你的座右铭...">
+      </div>
+      <button class="btn btn-primary" onclick="updateMotto()">保存座右铭</button>
+      <div id="mottoResult" class="result"></div>
     </div>
     
     <div class="card">
@@ -1042,6 +1268,7 @@ function renderProfile() {
     </div>
   `;
   
+  content.innerHTML = html;
   loadProfileContact();
 }
 
@@ -1052,6 +1279,22 @@ async function loadProfileContact() {
     document.getElementById('profilePhone').value = contact.phone || '';
     document.getElementById('profileEmail').value = contact.email || '';
     document.getElementById('profileWechat').value = contact.wechat || '';
+    document.getElementById('profileMotto').value = contact.motto || '';
+  } catch (e) {}
+}
+
+async function updateMotto() {
+  const motto = document.getElementById('profileMotto').value.trim();
+  
+  try {
+    await fetch('/update-motto', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: currentUser.name, motto })
+    });
+    document.getElementById('mottoResult').textContent = '✅ 保存成功';
+    document.getElementById('mottoResult').style.color = 'var(--success)';
+    setTimeout(() => document.getElementById('mottoResult').textContent = '', 2000);
   } catch (e) {}
 }
 
