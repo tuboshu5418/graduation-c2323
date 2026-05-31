@@ -35,12 +35,13 @@ const ROLE_CONFIG = {
   admin: {
     tabs: [
       { id: 'photos', icon: '📷', label: '相册' },
-      { id: 'messages', icon: '💬', label: '所有留言' },
-      { id: 'users', icon: '👥', label: '所有人物' },
-      { id: 'feedbacks', icon: '📊', label: '评价/感谢' },
+      { id: 'messages', icon: '💬', label: '留言' },
+      { id: 'users', icon: '👥', label: '人物' },
+      { id: 'feedbacks', icon: '📊', label: '评价' },
       { id: 'signature', icon: '✍️', label: '签名墙' },
       { id: 'songs', icon: '🎵', label: '歌单' },
       { id: 'console', icon: '💻', label: '控制台' },
+      { id: 'editor', icon: '📝', label: '源码' },
       { id: 'profile', icon: '👤', label: '我的' }
     ]
   }
@@ -60,7 +61,7 @@ function initMusicPlayer() {
   audio.addEventListener('loadedmetadata', () => { document.getElementById('duration').textContent = formatTime(audio.duration); });
   audio.addEventListener('play', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'; document.getElementById('musicToggle').classList.add('playing'); });
   audio.addEventListener('pause', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>'; document.getElementById('musicToggle').classList.remove('playing'); });
-  audio.addEventListener('ended', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>'; document.getElementById('musicToggle').classList.remove('playing'); });
+  audio.addEventListener('ended', () => { playNextSong(); });
 }
 
 function parseLRC(text) {
@@ -86,8 +87,28 @@ function seekTo(e) { if (!audio) return; const r = e.currentTarget.getBoundingCl
 function toggleMusic() { const p = document.getElementById('musicPanel'); if (p.classList.contains('show')) p.classList.remove('show'); else { if (!audio) initMusicPlayer(); p.classList.add('show'); } }
 function togglePanel() { document.getElementById('musicPanel').classList.remove('show'); }
 
+async function playNextSong() {
+  try {
+    const songs = await (await fetch('/songs')).json();
+    if (!songs.length) { document.getElementById('musicToggle').classList.remove('playing'); return; }
+    const ci = songs.findIndex(s => s.name === currentSongName);
+    const next = songs[(ci + 1) % songs.length];
+    playSong(next.filename, next.name);
+  } catch (e) { document.getElementById('musicToggle').classList.remove('playing'); }
+}
+
+// ========== 通用上传 ==========
+async function uploadFileToGitHub(file, folder, subfolder = '') {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('folder', folder);
+  if (subfolder) fd.append('subfolder', subfolder);
+  const r = await fetch('/upload-file', { method: 'POST', body: fd });
+  return await r.json();
+}
+
 // ========== 初始化 ==========
-async function loadClassmatesList() { try { const r = await fetch('/classmates-list'); window.allNames = (await r.json()).map(d => d.name); } catch (e) {} }
+async function loadClassmatesList() { try { window.allNames = (await (await fetch('/classmates-list')).json()).map(d => d.name); } catch (e) {} }
 async function loadClassmates() { try { allClassmates = await (await fetch('/classmates')).json(); } catch (e) {} }
 async function loadTeachers() { try { allTeachers = await (await fetch('/teachers')).json(); } catch (e) {} }
 
@@ -131,13 +152,47 @@ function renderTabBar(tabs) {
 function switchTab(tabId) {
   document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
   document.querySelector(`[data-tab="${tabId}"]`)?.classList.add('active');
-  const titles = { photos: '班级相册', teachers: '老师', classmates: '同学录', evaluate: '评价学生', thanks: '感谢', messages: '所有留言', users: '所有人物', profile: '我的', myMessages: '我的留言', feedbacks: '评价/感谢', signature: '签名墙', songs: '歌单', console: '控制台' };
+  const titles = { photos: '相册', teachers: '老师', classmates: '同学录', evaluate: '评价学生', thanks: '感谢', messages: '所有留言', users: '所有人物', profile: '我的', myMessages: '我的留言', feedbacks: '评价/感谢', signature: '签名墙', songs: '歌单', console: '控制台', editor: '源码编辑' };
   document.getElementById('pageTitle').textContent = titles[tabId] || tabId;
   document.getElementById('contentArea').innerHTML = '<div class="empty-state">加载中...</div>';
   setTimeout(() => {
-    const fn = { photos: renderPhotos, teachers: renderTeachers, classmates: renderClassmates, myMessages: renderMyMessages, evaluate: renderEvaluate, thanks: renderThanks, messages: renderAllMessages, users: renderAllUsers, feedbacks: renderAllFeedbacks, signature: renderSignature, songs: renderSongs, console: renderConsole, profile: renderProfile };
+    const fn = { photos: renderPhotos, teachers: renderTeachers, classmates: renderClassmates, myMessages: renderMyMessages, evaluate: renderEvaluate, thanks: renderThanks, messages: renderAllMessages, users: renderAllUsers, feedbacks: renderAllFeedbacks, signature: renderSignature, songs: renderSongs, console: renderConsole, editor: renderEditor, profile: renderProfile };
     if (fn[tabId]) fn[tabId]();
   }, 10);
+}
+
+// ========== 同学详情弹窗 ==========
+async function openClassmateDetail(name) {
+  try {
+    const contact = await (await fetch(`/contact/${encodeURIComponent(name)}`)).json();
+    const msgsToMe = await (await fetch(`/messages/${encodeURIComponent(name)}`)).json();
+    const msgsFromMe = await (await fetch(`/messages-from/${encodeURIComponent(currentUser.name)}`)).json();
+    const msgsToName = msgsFromMe.filter(m => m.to_name === name);
+    
+    let h = `<div style="text-align:center;margin-bottom:16px;"><div class="avatar-large">${contact.avatar&&contact.avatar.length<=2?contact.avatar:'🎓'}</div><h3>${escapeHtml(name)}</h3></div>`;
+    if (contact.motto) h += `<div class="card-detail" style="margin-bottom:12px;text-align:center;font-style:italic;">"${escapeHtml(contact.motto)}"</div>`;
+    if (contact.phone||contact.email||contact.wechat) {
+      h += '<div class="card-detail" style="margin-bottom:12px;">';
+      if (contact.phone) h += `<div class="contact-line"><span>📱</span> ${escapeHtml(contact.phone)}</div>`;
+      if (contact.email) h += `<div class="contact-line"><span>📧</span> ${escapeHtml(contact.email)}</div>`;
+      if (contact.wechat) h += `<div class="contact-line"><span>💬</span> ${escapeHtml(contact.wechat)}</div>`;
+      h += '</div>';
+    }
+    
+    h += '<h4 style="margin-top:16px;">TA给我的留言</h4>';
+    const fromThem = msgsToMe.filter(m => m.from_name === name);
+    if (!fromThem.length) h += '<div class="empty-state" style="padding:20px;">暂无</div>';
+    else fromThem.forEach(m => { h += `<div class="memory-card"><div class="memory-header"><span class="memory-from">${escapeHtml(m.from_name)}</span><span class="memory-time">${new Date(m.created_at).toLocaleString()}</span></div><div class="memory-content">${escapeHtml(m.content)}</div></div>`; });
+    
+    h += '<h4 style="margin-top:16px;">我给TA的留言</h4>';
+    if (!msgsToName.length) h += '<div class="empty-state" style="padding:20px;">暂无</div>';
+    else msgsToName.forEach(m => { h += `<div class="memory-card"><div class="memory-header"><span class="memory-from">我</span><span class="memory-time">${new Date(m.created_at).toLocaleString()}</span></div><div class="memory-content">${escapeHtml(m.content)}</div></div>`; });
+    
+    document.getElementById('modalTitle').textContent = `查看 ${name}`;
+    document.getElementById('modalBody').innerHTML = h;
+    document.getElementById('modalFooter').innerHTML = `<button class="btn btn-secondary" onclick="closeModal()">关闭</button><button class="btn btn-primary" onclick="closeModal();openMessageModal('${escapeHtml(name)}')">留言</button>`;
+    document.getElementById('modal').classList.add('show');
+  } catch (e) { alert('加载失败'); }
 }
 
 // ========== 我的留言 ==========
@@ -157,11 +212,11 @@ async function renderPhotos() {
     const photos = await (await fetch('/photos')).json();
     let h = '<div class="upload-btn" onclick="openUploadModal()"><span>📷</span> 上传照片</div><div class="photo-grid">';
     if (!photos || !photos.length) {
-      h += '<div class="photo-item"><img src="https://picsum.photos/400/400?random=1" loading="lazy" onclick="viewPhoto(\'https://picsum.photos/800/800?random=1\',\'示例\',\'系统\')"><div class="photo-overlay"><div class="photo-title">示例</div><div class="photo-uploader">系统</div></div></div>';
+      h += '<div class="empty-state" style="grid-column:1/-1;">还没有照片</div>';
     } else {
       photos.forEach(p => {
         const del = currentUser.role === 'admin' || p.uploaded_by === currentUser.name;
-        h += `<div class="photo-item"><img src="${escapeHtml(p.image_url)}" loading="lazy" onclick="viewPhoto('${escapeHtml(p.image_url)}','${escapeHtml(p.title)}','${escapeHtml(p.uploaded_by)}')" onerror="this.src='https://picsum.photos/400/400?random='+Math.random()">${del?`<button class="photo-delete-btn" onclick="event.stopPropagation();deletePhoto(${p.id})">🗑️</button>`:''}<div class="photo-overlay"><div class="photo-title">${escapeHtml(p.title)}</div><div class="photo-uploader">${escapeHtml(p.uploaded_by)}</div></div></div>`;
+        h += `<div class="photo-item"><img src="${escapeHtml(p.image_url)}" loading="lazy" onclick="viewPhoto('${escapeHtml(p.image_url)}','${escapeHtml(p.title)}','${escapeHtml(p.uploaded_by)}')" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2255%22 text-anchor=%22middle%22 fill=%22%23999%22%3E📷%3C/text%3E%3C/svg%3E'">${del?`<button class="photo-delete-btn" onclick="event.stopPropagation();deletePhoto(${p.id})">🗑️</button>`:''}<div class="photo-overlay"><div class="photo-title">${escapeHtml(p.title)}</div><div class="photo-uploader">${escapeHtml(p.uploaded_by)}</div></div></div>`;
       });
     }
     c.innerHTML = h + '</div>';
@@ -170,18 +225,39 @@ async function renderPhotos() {
 
 function openUploadModal() {
   document.getElementById('modalTitle').textContent = '上传照片';
-  document.getElementById('modalBody').innerHTML = '<div class="form-group"><label class="form-label">标题</label><input type="text" id="photoTitle" class="input" maxlength="100"></div><div class="form-group"><label class="form-label">图片链接</label><input type="text" id="photoUrl" class="input" maxlength="500"><p style="font-size:13px;color:var(--gray-4);margin-top:6px;">推荐 <a href="https://imgbb.com/" target="_blank">ImgBB</a></p></div>';
-  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doUploadPhoto()">上传</button>';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group"><label class="form-label">照片标题</label><input type="text" id="photoTitle" class="input" maxlength="100"></div>
+    <div class="form-group"><label class="form-label">选择照片</label><input type="file" id="photoFile" class="input" accept="image/*"></div>
+    <div id="photoProgress" style="display:none;margin-top:12px;"><div class="progress-bar-bg"><div class="progress-bar-fill" id="photoProgressFill"></div></div><p id="photoProgressText" style="text-align:center;font-size:13px;color:var(--gray-4);margin-top:8px;">上传中...</p></div>`;
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" id="photoUploadBtn" onclick="doUploadPhoto()">上传</button>';
   document.getElementById('modal').classList.add('show');
 }
+
 async function doUploadPhoto() {
-  const t = document.getElementById('photoTitle').value.trim(), u = document.getElementById('photoUrl').value.trim();
-  if (!t || !u) { alert('请填写完整'); return; }
-  try { await fetch('/photos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uploaded_by: currentUser.name, title: t, description: '', image_url: u }) }); closeModal(); renderPhotos(); } catch (e) { alert('上传失败'); }
+  const title = document.getElementById('photoTitle').value.trim();
+  const file = document.getElementById('photoFile').files[0];
+  if (!title || !file) { alert('请填写标题并选择照片'); return; }
+  if (file.size > 10*1024*1024) { alert('文件不能超过10MB'); return; }
+  
+  document.getElementById('photoProgress').style.display = 'block';
+  document.getElementById('photoUploadBtn').disabled = true;
+  
+  try {
+    const res = await uploadFileToGitHub(file, 'photos', title);
+    if (res.success) {
+      const imageUrl = `https://raw.githubusercontent.com/${res.path.replace('/contents/', '/')}`;
+      // 用 raw 链接
+      const rawUrl = `https://raw.githubusercontent.com/Tuboshu5418/graduation-c2323/main/${res.path}`;
+      await fetch('/photos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uploaded_by: currentUser.name, title, description: '', image_url: rawUrl }) });
+      closeModal(); renderPhotos();
+    } else { alert(res.error || '上传失败'); document.getElementById('photoUploadBtn').disabled = false; }
+  } catch (e) { alert('上传失败'); document.getElementById('photoUploadBtn').disabled = false; }
+  document.getElementById('photoProgress').style.display = 'none';
 }
+
 function viewPhoto(url, title, uploader) {
   document.getElementById('modalTitle').textContent = title;
-  document.getElementById('modalBody').innerHTML = `<img src="${escapeHtml(url)}" style="width:100%;border-radius:12px;" onerror="this.src='https://picsum.photos/400/400'"><p style="margin-top:12px;color:var(--gray-4);">上传者：${escapeHtml(uploader)}</p>`;
+  document.getElementById('modalBody').innerHTML = `<img src="${escapeHtml(url)}" style="width:100%;border-radius:12px;" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E'"><p style="margin-top:12px;color:var(--gray-4);">上传者：${escapeHtml(uploader)}</p>`;
   document.getElementById('modalFooter').innerHTML = '<button class="btn btn-primary" onclick="closeModal()">关闭</button>';
   document.getElementById('modal').classList.add('show');
 }
@@ -224,11 +300,11 @@ async function renderClassmatesListInContainer() {
     try {
       const contact = await (await fetch(`/contact/${encodeURIComponent(c.name)}`)).json();
       const card = document.createElement('div'); card.className = 'person-card classmate-card-item'; card.dataset.name = c.name;
-      card.innerHTML = `<div class="person-name">${escapeHtml(c.name)}</div><div class="person-contact">${contact.phone?`<div class="contact-line"><span class="emoji">📱</span> ${escapeHtml(contact.phone)}</div>`:''}${contact.wechat?`<div class="contact-line"><span class="emoji">💬</span> ${escapeHtml(contact.wechat)}</div>`:''}${contact.email?`<div class="contact-line"><span class="emoji">📧</span> ${escapeHtml(contact.email)}</div>`:''}</div><div class="person-actions"><button class="btn btn-primary btn-small" onclick="openMessageModal('${escapeHtml(c.name)}')">留言</button></div>`;
+      card.innerHTML = `<div class="person-name">${escapeHtml(c.name)}</div><div class="person-contact">${contact.phone?`<div class="contact-line"><span class="emoji">📱</span> ${escapeHtml(contact.phone)}</div>`:''}${contact.wechat?`<div class="contact-line"><span class="emoji">💬</span> ${escapeHtml(contact.wechat)}</div>`:''}${contact.email?`<div class="contact-line"><span class="emoji">📧</span> ${escapeHtml(contact.email)}</div>`:''}</div><div class="person-actions"><button class="btn btn-primary btn-small" onclick="openClassmateDetail('${escapeHtml(c.name)}')">查看</button></div>`;
       ct.appendChild(card);
     } catch (e) {
       const card = document.createElement('div'); card.className = 'person-card classmate-card-item'; card.dataset.name = c.name;
-      card.innerHTML = `<div class="person-name">${escapeHtml(c.name)}</div><div class="person-contact"></div><div class="person-actions"><button class="btn btn-primary btn-small" onclick="openMessageModal('${escapeHtml(c.name)}')">留言</button></div>`;
+      card.innerHTML = `<div class="person-name">${escapeHtml(c.name)}</div><div class="person-contact"></div><div class="person-actions"><button class="btn btn-primary btn-small" onclick="openClassmateDetail('${escapeHtml(c.name)}')">查看</button></div>`;
       ct.appendChild(card);
     }
   }
@@ -306,7 +382,7 @@ async function renderAllUsers() {
   const c = document.getElementById('contentArea');
   try {
     const data = await (await fetch(`/admin/all-data?requester=${encodeURIComponent(currentUser.name)}`)).json();
-    let h = `<div style="margin-bottom:16px;"><button class="btn btn-primary" onclick="openAddUserModal()">➕ 添加用户</button></div><div class="stats-grid"><div class="stat-card"><div class="stat-value">${data.users.length}</div><div class="stat-label">总用户</div></div><div class="stat-card"><div class="stat-value">${data.messages.length}</div><div class="stat-label">留言</div></div><div class="stat-card"><div class="stat-value">${data.feedbacks.length}</div><div class="stat-label">评价/感谢</div></div><div class="stat-card"><div class="stat-value">${data.photos.length}</div><div class="stat-label">照片</div></div></div>`;
+    let h = `<div style="margin-bottom:16px;"><button class="btn btn-primary" onclick="openAddUserModal()">➕ 添加用户</button></div><div class="stats-grid"><div class="stat-card"><div class="stat-value">${data.users.length}</div><div class="stat-label">总用户</div></div><div class="stat-card"><div class="stat-value">${data.messages.length}</div><div class="stat-label">留言</div></div><div class="stat-card"><div class="stat-value">${data.feedbacks.length}</div><div class="stat-label">评价</div></div><div class="stat-card"><div class="stat-value">${data.photos.length}</div><div class="stat-label">照片</div></div></div>`;
     data.users.forEach(u => {
       const av = u.avatar || '😊', em = av.length <= 2 || !av.startsWith('http');
       h += `<div class="card"><div class="card-header"><div class="card-avatar">${em ? av : `<img src="${escapeHtml(av)}" class="avatar-img">`}</div><div class="card-info"><div class="card-name">${escapeHtml(u.name)}<span class="role-tag ${u.role}">${u.role==='admin'?'管理员':(u.role==='teacher'?'老师':'同学')}</span></div></div><div class="admin-actions"><button class="btn-icon edit" onclick="openEditUserModal('${escapeHtml(u.name)}','${u.role}','${escapeHtml(u.phone||'')}','${escapeHtml(u.email||'')}','${escapeHtml(u.wechat||'')}')">编辑</button>${u.name!==currentUser.name?`<button class="btn-icon delete" onclick="deleteUser('${escapeHtml(u.name)}')">删除</button>`:''}</div></div><div class="card-detail">${u.phone?`<div class="card-detail-item"><span>📱</span> ${escapeHtml(u.phone)}</div>`:''}${u.email?`<div class="card-detail-item"><span>📧</span> ${escapeHtml(u.email)}</div>`:''}${u.wechat?`<div class="card-detail-item"><span>💬</span> ${escapeHtml(u.wechat)}</div>`:''}</div></div>`;
@@ -334,18 +410,9 @@ function openEditUserModal(n, r, ph, em, wx) {
 }
 async function doEditUser(n) {
   const r = document.getElementById('editUserRole').value, ph = document.getElementById('editUserPhone').value.trim(), em = document.getElementById('editUserEmail').value.trim(), wx = document.getElementById('editUserWechat').value.trim();
-  try { const res = await (await fetch('/admin/update-user', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name, targetName: n, role: r, phone: ph, email: em, wechat: wx }) })).json(); if (res.success) { closeModal(); renderAllUsers(); loadClass
-    } else { alert(res.error); }
-  } catch (e) { alert('保存失败'); }
+  try { const res = await (await fetch('/admin/update-user', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name, targetName: n, role: r, phone: ph, email: em, wechat: wx }) })).json(); if (res.success) { closeModal(); renderAllUsers(); loadClassmatesList(); loadClassmates(); } else alert(res.error); } catch (e) { alert('保存失败'); }
 }
-
-async function deleteUser(name) {
-  if (!confirm(`确定删除 ${name} 吗？相关数据也会被删除！`)) return;
-  try {
-    await fetch('/admin/delete-user', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name, targetName: name }) });
-    renderAllUsers(); loadClassmatesList(); loadClassmates();
-  } catch (e) { alert('删除失败'); }
-}
+async function deleteUser(name) { if (!confirm(`确定删除 ${name} 吗？`)) return; try { await fetch('/admin/delete-user', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name, targetName: name }) }); renderAllUsers(); loadClassmatesList(); loadClassmates(); } catch (e) { alert('删除失败'); } }
 
 // ========== 管理员：评价/感谢总览 ==========
 async function renderAllFeedbacks() {
@@ -354,9 +421,7 @@ async function renderAllFeedbacks() {
     const data = await (await fetch(`/admin/all-data?requester=${encodeURIComponent(currentUser.name)}`)).json();
     if (!data.feedbacks || !data.feedbacks.length) { c.innerHTML = '<div class="empty-state">暂无评价或感谢</div>'; return; }
     let h = '<h4 style="margin-bottom:16px;">📊 所有评价与感谢</h4>';
-    data.feedbacks.forEach(f => {
-      h += `<div class="memory-card"><div class="memory-header"><span class="memory-from">${escapeHtml(f.from_name)} → ${escapeHtml(f.to_name)}</span><span class="memory-time">${new Date(f.created_at).toLocaleString()}</span></div><span class="role-tag ${f.type}">${f.type==='evaluation'?'📝 评价':'🙏 感谢'}</span><div class="memory-content">${escapeHtml(f.content)}</div></div>`;
-    });
+    data.feedbacks.forEach(f => { h += `<div class="memory-card"><div class="memory-header"><span class="memory-from">${escapeHtml(f.from_name)} → ${escapeHtml(f.to_name)}</span><span class="memory-time">${new Date(f.created_at).toLocaleString()}</span></div><span class="role-tag ${f.type}">${f.type==='evaluation'?'📝 评价':'🙏 感谢'}</span><div class="memory-content">${escapeHtml(f.content)}</div></div>`; });
     c.innerHTML = h;
   } catch (e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
 }
@@ -365,19 +430,21 @@ async function renderAllFeedbacks() {
 function renderConsole() {
   const c = document.getElementById('contentArea');
   const cmds = [
-    'SELECT * FROM classmates',
-    'SELECT * FROM messages ORDER BY created_at DESC LIMIT 20',
-    'SELECT * FROM feedbacks ORDER BY created_at DESC LIMIT 20',
-    'SELECT * FROM photos',
-    'SELECT * FROM songs',
-    'SELECT COUNT(*) as count, role FROM classmates GROUP BY role'
+    { label: '查看所有用户', sql: 'SELECT * FROM classmates' },
+    { label: '最近20条留言', sql: 'SELECT * FROM messages ORDER BY created_at DESC LIMIT 20' },
+    { label: '最近20条评价', sql: 'SELECT * FROM feedbacks ORDER BY created_at DESC LIMIT 20' },
+    { label: '所有照片', sql: 'SELECT * FROM photos' },
+    { label: '所有歌曲', sql: 'SELECT * FROM songs' },
+    { label: '按角色统计人数', sql: 'SELECT COUNT(*) as count, role FROM classmates GROUP BY role' },
+    { label: '漂流瓶统计', sql: 'SELECT * FROM drift_bottles ORDER BY created_at DESC' }
   ];
-  c.innerHTML = `<div class="card"><h4 style="margin-bottom:16px;">💻 SQL 查询控制台</h4><div class="form-group"><label class="form-label">SQL（仅 SELECT）</label><textarea id="sqlInput" class="input" rows="4" placeholder="SELECT * FROM classmates LIMIT 5;"></textarea></div><button class="btn btn-primary" onclick="executeSQL()">执行</button><div id="sqlResult" style="margin-top:16px;"></div></div><div class="card"><h4 style="margin-bottom:16px;">📋 常用命令</h4><div class="cmd-list">${cmds.map(c => `<div class="cmd-item" onclick="document.getElementById('sqlInput').value='${c}'"><span>📋</span> ${c}</div>`).join('')}</div></div>`;
+  c.innerHTML = `<div class="card"><h4 style="margin-bottom:16px;">💻 SQL 查询控制台</h4><div class="form-group"><label class="form-label">SQL（仅 SELECT）</label><textarea id="sqlInput" class="input" rows="4" placeholder="SELECT * FROM classmates LIMIT 5;"></textarea></div><button class="btn btn-primary" onclick="executeSQL()">执行</button><div id="sqlResult" style="margin-top:16px;"></div></div><div class="card"><h4 style="margin-bottom:16px;">📋 快捷查询</h4><div class="cmd-list">${cmds.map(c => `<div class="cmd-item" onclick="document.getElementById('sqlInput').value=\`${c.sql}\`;executeSQL()"><span>📋</span> ${c.label}</div>`).join('')}</div></div>`;
 }
 async function executeSQL() {
   const sql = document.getElementById('sqlInput').value.trim(), rd = document.getElementById('sqlResult');
   if (!sql) { rd.innerHTML = '<div class="error">请输入 SQL</div>'; return; }
   if (!sql.toUpperCase().startsWith('SELECT')) { rd.innerHTML = '<div class="error">仅允许 SELECT</div>'; return; }
+  rd.innerHTML = '<div class="empty-state">查询中...</div>';
   try {
     const res = await (await fetch(`/admin/query?requester=${encodeURIComponent(currentUser.name)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql }) })).json();
     if (res.error) { rd.innerHTML = `<div class="error">${escapeHtml(res.error)}</div>`; return; }
@@ -390,7 +457,42 @@ async function executeSQL() {
   } catch (e) { rd.innerHTML = '<div class="error">查询失败</div>'; }
 }
 
-// ========== 签名墙（画板涂鸦） ==========
+// ========== 源码编辑器 ==========
+async function renderEditor() {
+  const c = document.getElementById('contentArea');
+  c.innerHTML = '<div class="empty-state">加载文件列表...</div>';
+  try {
+    const res = await (await fetch(`/admin/list-files?requester=${encodeURIComponent(currentUser.name)}`)).json();
+    if (res.error) { c.innerHTML = `<div class="error">${res.error}</div>`; return; }
+    const files = (res.files || []).filter(f => f.type === 'blob' && (f.path.endsWith('.js') || f.path.endsWith('.css') || f.path.endsWith('.html') || f.path.endsWith('.lrc') || f.path.endsWith('.txt')));
+    let h = '<h4 style="margin-bottom:16px;">📝 源代码编辑</h4><div class="cmd-list">';
+    files.forEach(f => { h += `<div class="cmd-item" onclick="openFileEditor('${f.path}')"><span>📄</span> ${f.path}</div>`; });
+    h += '</div><div id="editorArea"></div>';
+    c.innerHTML = h;
+  } catch (e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
+}
+
+async function openFileEditor(filePath) {
+  const ea = document.getElementById('editorArea');
+  ea.innerHTML = '<div class="empty-state">加载中...</div>';
+  try {
+    const res = await (await fetch('/get-file', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }) })).json();
+    if (res.error) { ea.innerHTML = `<div class="error">${res.error}</div>`; return; }
+    const content = atob(res.content);
+    ea.innerHTML = `<div class="card"><h4 style="margin-bottom:8px;">📄 ${filePath}</h4><textarea id="editContent" class="input" rows="15" style="font-family:monospace;font-size:13px;">${escapeHtml(content)}</textarea><div style="display:flex;gap:8px;margin-top:12px;"><button class="btn btn-secondary" onclick="renderEditor()">取消</button><button class="btn btn-primary" onclick="saveFile('${filePath}','${res.sha}')">💾 保存</button></div></div>`;
+  } catch (e) { ea.innerHTML = '<div class="error">加载失败</div>'; }
+}
+
+async function saveFile(filePath, sha) {
+  const content = document.getElementById('editContent').value;
+  try {
+    const res = await (await fetch('/admin/edit-file', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name, filePath, content, sha }) })).json();
+    if (res.success) { alert('保存成功！Pages 将自动部署。'); renderEditor(); }
+    else alert(res.error || '保存失败');
+  } catch (e) { alert('保存失败'); }
+}
+
+// ========== 签名墙 ==========
 let sigCanvas, sigCtx, isDrawing = false, drawColor = '#000000', drawSize = 4, lastX = 0, lastY = 0;
 
 async function renderSignature() {
@@ -497,21 +599,46 @@ async function renderSongs() {
       songs.forEach(s => { h += `<div class="song-item${currentSongName===s.name?' playing':''}" onclick="playSong('${escapeHtml(s.filename)}','${escapeHtml(s.name)}')"><div class="song-info"><span class="song-name">🎵 ${escapeHtml(s.name)}</span><span class="song-uploader">${escapeHtml(s.uploaded_by)}</span></div><span class="song-play">▶️</span></div>`; });
       h += '</div>';
     }
-    h += '<p style="font-size:12px;color:var(--gray-4);margin-top:16px;text-align:center;">歌曲通过 GitHub 上传，点击即可播放</p>';
+    h += '<p style="font-size:12px;color:var(--gray-4);margin-top:16px;text-align:center;">歌曲通过 GitHub 上传，点击播放，自动下一首</p>';
     c.innerHTML = h;
   } catch (e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
 }
 
 function openAddSongModal() {
   document.getElementById('modalTitle').textContent = '添加歌曲';
-  document.getElementById('modalBody').innerHTML = '<div class="form-group"><label class="form-label">歌曲名称</label><input type="text" id="songName" class="input" maxlength="100"></div><div class="form-group"><label class="form-label">文件夹名</label><input type="text" id="songFolder" class="input" maxlength="100"><p style="font-size:12px;color:var(--gray-4);">对应 songs/文件夹名/ 目录</p></div>';
-  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doAddSong()">添加</button>';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group"><label class="form-label">歌曲名称</label><input type="text" id="songName" class="input" maxlength="100"></div>
+    <div class="form-group"><label class="form-label">上传 MP3（必须）</label><input type="file" id="songMp3File" class="input" accept="audio/mpeg"></div>
+    <div class="form-group"><label class="form-label">上传 LRC 歌词（可选）</label><input type="file" id="songLrcFile" class="input" accept=".lrc"></div>
+    <div id="songProgress" style="display:none;margin-top:12px;"><div class="progress-bar-bg"><div class="progress-bar-fill" id="songProgressFill"></div></div><p id="songProgressText" style="text-align:center;font-size:13px;color:var(--gray-4);margin-top:8px;">上传中...</p></div>`;
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" id="songUploadBtn" onclick="doAddSongWithFiles()">上传并添加</button>';
   document.getElementById('modal').classList.add('show');
 }
-async function doAddSong() {
-  const n = document.getElementById('songName').value.trim(), f = document.getElementById('songFolder').value.trim();
-  if (!n || !f) { alert('请填写完整'); return; }
-  try { await fetch('/songs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n, filename: f, uploaded_by: currentUser.name }) }); closeModal(); renderSongs(); } catch (e) { alert('添加失败'); }
+
+async function doAddSongWithFiles() {
+  const name = document.getElementById('songName').value.trim();
+  const mp3 = document.getElementById('songMp3File').files[0];
+  const lrc = document.getElementById('songLrcFile').files[0];
+  if (!name || !mp3) { alert('请填写歌曲名并选择 MP3'); return; }
+  if (!/^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$/.test(name)) { alert('非法字符'); return; }
+  
+  document.getElementById('songProgress').style.display = 'block';
+  document.getElementById('songUploadBtn').disabled = true;
+  
+  try {
+    const res = await uploadFileToGitHub(mp3, 'songs', name);
+    if (!res.success) { alert('MP3上传失败: ' + res.error); return; }
+    document.getElementById('songProgressFill').style.width = '50%';
+    document.getElementById('songProgressText').textContent = 'MP3 上传成功';
+    
+    if (lrc) {
+      const lrcRes = await uploadFileToGitHub(lrc, 'songs', name);
+      if (lrcRes.success) { document.getElementById('songProgressFill').style.width = '100%'; document.getElementById('songProgressText').textContent = '上传完成'; }
+    } else { document.getElementById('songProgressFill').style.width = '100%'; document.getElementById('songProgressText').textContent = '上传完成（无歌词）'; }
+    
+    await fetch('/songs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, filename: name, uploaded_by: currentUser.name }) });
+    setTimeout(() => { closeModal(); renderSongs(); }, 1500);
+  } catch (e) { alert('上传失败'); document.getElementById('songUploadBtn').disabled = false; document.getElementById('songProgress').style.display = 'none'; }
 }
 
 function playSong(folder, name) {
@@ -525,7 +652,7 @@ function playSong(folder, name) {
   audio.addEventListener('loadedmetadata', () => { document.getElementById('duration').textContent = formatTime(audio.duration); });
   audio.addEventListener('play', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'; document.getElementById('musicToggle').classList.add('playing'); });
   audio.addEventListener('pause', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>'; document.getElementById('musicToggle').classList.remove('playing'); });
-  audio.addEventListener('ended', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>'; document.getElementById('musicToggle').classList.remove('playing'); });
+  audio.addEventListener('ended', () => { playNextSong(); });
   audio.play().catch(() => { alert('播放失败'); });
   document.getElementById('musicPanel').classList.add('show');
   renderSongs();
@@ -553,9 +680,7 @@ function renderProfile() {
   loadDriftBottles('sent');
 }
 
-async function loadProfileContact() {
-  try { const ct = await (await fetch(`/contact/${encodeURIComponent(currentUser.name)}`)).json(); document.getElementById('profilePhone').value = ct.phone||''; document.getElementById('profileEmail').value = ct.email||''; document.getElementById('profileWechat').value = ct.wechat||''; document.getElementById('profileMotto').value = ct.motto||''; } catch (e) {}
-}
+async function loadProfileContact() { try { const ct = await (await fetch(`/contact/${encodeURIComponent(currentUser.name)}`)).json(); document.getElementById('profilePhone').value = ct.phone||''; document.getElementById('profileEmail').value = ct.email||''; document.getElementById('profileWechat').value = ct.wechat||''; document.getElementById('profileMotto').value = ct.motto||''; } catch (e) {} }
 async function updateMotto() { try { await fetch('/update-motto', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, motto: document.getElementById('profileMotto').value.trim() }) }); document.getElementById('mottoResult').textContent = '✅ 已保存'; document.getElementById('mottoResult').style.color = 'var(--success)'; } catch (e) {} }
 async function updateProfile() { try { await fetch('/update-contact', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, phone: document.getElementById('profilePhone').value, email: document.getElementById('profileEmail').value, wechat: document.getElementById('profileWechat').value }) }); document.getElementById('profileResult').textContent = '✅ 已保存'; } catch (e) {} }
 async function changePassword() {
@@ -567,14 +692,31 @@ async function changePassword() {
 
 function openAvatarModal() {
   document.getElementById('modalTitle').textContent = '修改头像';
-  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>选择表情</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">${['😊','😎','🥳','🤓','😇','🦊','🐼','🐨','🐸','⭐','🌟','🔥','🎓','📚','🎵'].map(e => `<span style="font-size:36px;cursor:pointer;padding:8px;" onclick="selectAvatar('${e}')">${e}</span>`).join('')}</div><p style="margin-top:20px;">或输入图片URL</p><input type="text" id="avatarUrl" class="input" maxlength="500"></div>`;
-  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveAvatar()">保存</button>';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="form-group"><label>上传头像图片</label><input type="file" id="avatarFile" class="input" accept="image/*"></div>
+    <div class="form-group"><label>或选择表情</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">${['😊','😎','🥳','🤓','😇','🦊','🐼','🐨','🐸','⭐','🌟','🔥','🎓','📚','🎵'].map(e => `<span style="font-size:36px;cursor:pointer;padding:8px;" onclick="selectAvatar('${e}')">${e}</span>`).join('')}</div></div>
+    <div id="avatarProgress" style="display:none;"><div class="progress-bar-bg"><div class="progress-bar-fill" id="avatarProgressFill"></div></div></div>`;
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" id="avatarSaveBtn" onclick="saveAvatar()">保存</button>';
   document.getElementById('modal').classList.add('show'); window.selectedAvatar = null;
 }
-function selectAvatar(emoji) { window.selectedAvatar = emoji; document.getElementById('avatarUrl').value = ''; }
+function selectAvatar(emoji) { window.selectedAvatar = emoji; }
 async function saveAvatar() {
-  const av = document.getElementById('avatarUrl').value.trim() || window.selectedAvatar || '😊';
-  try { await fetch('/update-avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, avatar: av }) }); currentUser.avatar = av; localStorage.setItem('currentUser', JSON.stringify(currentUser)); closeModal(); renderProfile(); } catch (e) { alert('保存失败'); }
+  const file = document.getElementById('avatarFile').files[0];
+  if (file) {
+    document.getElementById('avatarProgress').style.display = 'block';
+    document.getElementById('avatarSaveBtn').disabled = true;
+    try {
+      const res = await uploadFileToGitHub(file, 'avatars', currentUser.name);
+      if (res.success) {
+        const rawUrl = `https://raw.githubusercontent.com/Tuboshu5418/graduation-c2323/main/${res.path}`;
+        await fetch('/update-avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, avatar: rawUrl }) });
+        currentUser.avatar = rawUrl; localStorage.setItem('currentUser', JSON.stringify(currentUser)); closeModal(); renderProfile();
+      } else { alert('上传失败'); }
+    } catch (e) { alert('上传失败'); }
+    document.getElementById('avatarProgress').style.display = 'none'; document.getElementById('avatarSaveBtn').disabled = false;
+  } else if (window.selectedAvatar) {
+    try { await fetch('/update-avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, avatar: window.selectedAvatar }) }); currentUser.avatar = window.selectedAvatar; localStorage.setItem('currentUser', JSON.stringify(currentUser)); closeModal(); renderProfile(); } catch (e) { alert('保存失败'); }
+  } else { alert('请选择头像或表情'); }
 }
 
 // ========== 漂流瓶 ==========
