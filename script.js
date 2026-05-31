@@ -247,7 +247,7 @@ async function doUploadPhoto() {
     if (res.success) {
       const imageUrl = `https://raw.githubusercontent.com/${res.path.replace('/contents/', '/')}`;
       // 用 raw 链接
-      const rawUrl = `https://raw.githubusercontent.com/Tuboshu5418/graduation-c2323/main/${res.path}`;
+      const rawUrl = `https://raw.githubusercontent.com/tuboshu5418/graduation-c2323/main/${res.path}`;
       await fetch('/photos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uploaded_by: currentUser.name, title, description: '', image_url: rawUrl }) });
       closeModal(); renderPhotos();
     } else { alert(res.error || '上传失败'); document.getElementById('photoUploadBtn').disabled = false; }
@@ -708,7 +708,7 @@ async function saveAvatar() {
     try {
       const res = await uploadFileToGitHub(file, 'avatars', currentUser.name);
       if (res.success) {
-        const rawUrl = `https://raw.githubusercontent.com/Tuboshu5418/graduation-c2323/main/${res.path}`;
+        const rawUrl = `https://raw.githubusercontent.com/tuboshu5418/graduation-c2323/main/${res.path}`;
         await fetch('/update-avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, avatar: rawUrl }) });
         currentUser.avatar = rawUrl; localStorage.setItem('currentUser', JSON.stringify(currentUser)); closeModal(); renderProfile();
       } else { alert('上传失败'); }
