@@ -335,3 +335,291 @@ function openEditUserModal(n, r, ph, em, wx) {
 async function doEditUser(n) {
   const r = document.getElementById('editUserRole').value, ph = document.getElementById('editUserPhone').value.trim(), em = document.getElementById('editUserEmail').value.trim(), wx = document.getElementById('editUserWechat').value.trim();
   try { const res = await (await fetch('/admin/update-user', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name, targetName: n, role: r, phone: ph, email: em, wechat: wx }) })).json(); if (res.success) { closeModal(); renderAllUsers(); loadClass
+    } else { alert(res.error); }
+  } catch (e) { alert('保存失败'); }
+}
+
+async function deleteUser(name) {
+  if (!confirm(`确定删除 ${name} 吗？相关数据也会被删除！`)) return;
+  try {
+    await fetch('/admin/delete-user', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name, targetName: name }) });
+    renderAllUsers(); loadClassmatesList(); loadClassmates();
+  } catch (e) { alert('删除失败'); }
+}
+
+// ========== 管理员：评价/感谢总览 ==========
+async function renderAllFeedbacks() {
+  const c = document.getElementById('contentArea');
+  try {
+    const data = await (await fetch(`/admin/all-data?requester=${encodeURIComponent(currentUser.name)}`)).json();
+    if (!data.feedbacks || !data.feedbacks.length) { c.innerHTML = '<div class="empty-state">暂无评价或感谢</div>'; return; }
+    let h = '<h4 style="margin-bottom:16px;">📊 所有评价与感谢</h4>';
+    data.feedbacks.forEach(f => {
+      h += `<div class="memory-card"><div class="memory-header"><span class="memory-from">${escapeHtml(f.from_name)} → ${escapeHtml(f.to_name)}</span><span class="memory-time">${new Date(f.created_at).toLocaleString()}</span></div><span class="role-tag ${f.type}">${f.type==='evaluation'?'📝 评价':'🙏 感谢'}</span><div class="memory-content">${escapeHtml(f.content)}</div></div>`;
+    });
+    c.innerHTML = h;
+  } catch (e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
+}
+
+// ========== 控制台 ==========
+function renderConsole() {
+  const c = document.getElementById('contentArea');
+  const cmds = [
+    'SELECT * FROM classmates',
+    'SELECT * FROM messages ORDER BY created_at DESC LIMIT 20',
+    'SELECT * FROM feedbacks ORDER BY created_at DESC LIMIT 20',
+    'SELECT * FROM photos',
+    'SELECT * FROM songs',
+    'SELECT COUNT(*) as count, role FROM classmates GROUP BY role'
+  ];
+  c.innerHTML = `<div class="card"><h4 style="margin-bottom:16px;">💻 SQL 查询控制台</h4><div class="form-group"><label class="form-label">SQL（仅 SELECT）</label><textarea id="sqlInput" class="input" rows="4" placeholder="SELECT * FROM classmates LIMIT 5;"></textarea></div><button class="btn btn-primary" onclick="executeSQL()">执行</button><div id="sqlResult" style="margin-top:16px;"></div></div><div class="card"><h4 style="margin-bottom:16px;">📋 常用命令</h4><div class="cmd-list">${cmds.map(c => `<div class="cmd-item" onclick="document.getElementById('sqlInput').value='${c}'"><span>📋</span> ${c}</div>`).join('')}</div></div>`;
+}
+async function executeSQL() {
+  const sql = document.getElementById('sqlInput').value.trim(), rd = document.getElementById('sqlResult');
+  if (!sql) { rd.innerHTML = '<div class="error">请输入 SQL</div>'; return; }
+  if (!sql.toUpperCase().startsWith('SELECT')) { rd.innerHTML = '<div class="error">仅允许 SELECT</div>'; return; }
+  try {
+    const res = await (await fetch(`/admin/query?requester=${encodeURIComponent(currentUser.name)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql }) })).json();
+    if (res.error) { rd.innerHTML = `<div class="error">${escapeHtml(res.error)}</div>`; return; }
+    if (!res.results || !res.results.length) { rd.innerHTML = '<div class="empty-state">无结果</div>'; return; }
+    const cols = Object.keys(res.results[0]);
+    let h = '<div style="overflow-x:auto;"><table class="result-table"><thead><tr>' + cols.map(c => `<th>${escapeHtml(c)}</th>`).join('') + '</tr></thead><tbody>';
+    res.results.forEach(r => { h += '<tr>' + cols.map(c => `<td>${escapeHtml(String(r[c]??''))}</td>`).join('') + '</tr>'; });
+    h += `</tbody></table></div><p style="margin-top:8px;color:var(--gray-4);">共 ${res.results.length} 条</p>`;
+    rd.innerHTML = h;
+  } catch (e) { rd.innerHTML = '<div class="error">查询失败</div>'; }
+}
+
+// ========== 签名墙（画板涂鸦） ==========
+let sigCanvas, sigCtx, isDrawing = false, drawColor = '#000000', drawSize = 4, lastX = 0, lastY = 0;
+
+async function renderSignature() {
+  const c = document.getElementById('contentArea');
+  c.innerHTML = `
+    <div class="signature-toolbar">
+      <label>颜色：</label><input type="color" id="drawColor" value="#000000" onchange="drawColor=this.value" style="width:36px;height:36px;border:none;border-radius:8px;cursor:pointer;">
+      <label style="margin-left:8px;">粗细：</label><select id="drawSize" onchange="drawSize=parseInt(this.value)" style="padding:8px;border-radius:8px;border:1px solid var(--gray-2);"><option value="2">细</option><option value="4" selected>中</option><option value="8">粗</option><option value="14">特粗</option></select>
+      <button class="btn btn-small btn-outline" onclick="undoSignature()" style="margin-left:auto;">↩️ 撤销</button>
+      <button class="btn btn-small btn-primary" onclick="openSignatureFullscreen()">🔲 全屏</button>
+      ${currentUser.role==='admin'?'<button class="btn btn-small btn-outline" onclick="clearSignature()" style="color:var(--danger);border-color:var(--danger);">🧹 清除</button>':''}
+    </div>
+    <div class="signature-container"><canvas id="signCanvas"></canvas></div>
+    <div style="display:flex;gap:8px;margin-top:12px;"><button class="btn btn-primary" onclick="saveSignature()">💾 保存签名</button></div>
+    <p style="font-size:12px;color:var(--gray-4);margin-top:8px;text-align:center;">按住鼠标或手指绘制，全屏可防滑动误触</p>
+    <div class="signature-fullscreen" id="sigFullscreen">
+      <div class="fullscreen-toolbar">
+        <label>颜色：</label><input type="color" id="fsDrawColor" value="#000000" onchange="drawColor=this.value;document.getElementById('drawColor').value=this.value" style="width:36px;height:36px;border:none;border-radius:8px;cursor:pointer;">
+        <label style="margin-left:8px;">粗细：</label><select id="fsDrawSize" onchange="drawSize=parseInt(this.value);document.getElementById('drawSize').value=this.value" style="padding:8px;border-radius:8px;border:1px solid var(--gray-2);"><option value="2">细</option><option value="4" selected>中</option><option value="8">粗</option><option value="14">特粗</option></select>
+        <button class="btn btn-small btn-outline" onclick="undoSignature()" style="margin-left:auto;">↩️ 撤销</button>
+        <button class="btn btn-small btn-primary" onclick="saveSignature()">💾 保存</button>
+        <button class="btn btn-small btn-outline" onclick="closeSignatureFullscreen()">✕ 退出</button>
+      </div>
+      <canvas id="fsSignCanvas"></canvas>
+    </div>`;
+  setTimeout(initSigCanvas, 100);
+}
+
+function initSigCanvas() {
+  const cv = document.getElementById('signCanvas'); if (!cv) return;
+  sigCanvas = cv; sigCtx = cv.getContext('2d');
+  cv.width = 1200; cv.height = 900;
+  fetch('/signature-wall').then(r => r.json()).then(d => {
+    if (d.image_data) { const img = new Image(); img.onload = () => sigCtx.drawImage(img, 0, 0, 1200, 900); img.src = d.image_data; }
+    else { sigCtx.fillStyle = '#FFFFFF'; sigCtx.fillRect(0, 0, 1200, 900); }
+  });
+  bindCanvasEvents(cv);
+}
+
+function bindCanvasEvents(canvas) {
+  canvas.addEventListener('mousedown', e => { isDrawing = true; const r = canvas.getBoundingClientRect(); lastX = (e.clientX - r.left) * (canvas.width / r.width); lastY = (e.clientY - r.top) * (canvas.height / r.height); });
+  canvas.addEventListener('mousemove', e => { if (!isDrawing) return; const r = canvas.getBoundingClientRect(); const x = (e.clientX - r.left) * (canvas.width / r.width); const y = (e.clientY - r.top) * (canvas.height / r.height); sigCtx.beginPath(); sigCtx.moveTo(lastX, lastY); sigCtx.lineTo(x, y); sigCtx.strokeStyle = drawColor; sigCtx.lineWidth = drawSize * 2; sigCtx.lineCap = 'round'; sigCtx.lineJoin = 'round'; sigCtx.stroke(); lastX = x; lastY = y; });
+  canvas.addEventListener('mouseup', () => { isDrawing = false; });
+  canvas.addEventListener('mouseleave', () => { isDrawing = false; });
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); const t = e.touches[0]; const r = canvas.getBoundingClientRect(); lastX = (t.clientX - r.left) * (canvas.width / r.width); lastY = (t.clientY - r.top) * (canvas.height / r.height); isDrawing = true; });
+  canvas.addEventListener('touchmove', e => { e.preventDefault(); if (!isDrawing) return; const t = e.touches[0]; const r = canvas.getBoundingClientRect(); const x = (t.clientX - r.left) * (canvas.width / r.width); const y = (t.clientY - r.top) * (canvas.height / r.height); sigCtx.beginPath(); sigCtx.moveTo(lastX, lastY); sigCtx.lineTo(x, y); sigCtx.strokeStyle = drawColor; sigCtx.lineWidth = drawSize * 2; sigCtx.lineCap = 'round'; sigCtx.lineJoin = 'round'; sigCtx.stroke(); lastX = x; lastY = y; });
+  canvas.addEventListener('touchend', () => { isDrawing = false; });
+}
+
+function openSignatureFullscreen() {
+  const fs = document.getElementById('sigFullscreen'); fs.classList.add('active');
+  const fc = document.getElementById('fsSignCanvas'); fc.width = window.innerWidth; fc.height = window.innerHeight - 60;
+  const fctx = fc.getContext('2d');
+  const imgData = sigCanvas.toDataURL();
+  const img = new Image(); img.onload = () => fctx.drawImage(img, 0, 0, fc.width, fc.height); img.src = imgData;
+  bindCanvasEvents(fc); document.body.style.overflow = 'hidden';
+}
+function closeSignatureFullscreen() {
+  const fc = document.getElementById('fsSignCanvas'); const imgData = fc.toDataURL();
+  const img = new Image(); img.onload = () => { sigCtx.clearRect(0, 0, 1200, 900); sigCtx.drawImage(img, 0, 0, 1200, 900); }; img.src = imgData;
+  document.getElementById('sigFullscreen').classList.remove('active'); document.body.style.overflow = '';
+}
+function undoSignature() {
+  const inFS = document.getElementById('sigFullscreen').classList.contains('active');
+  const ctx = inFS ? document.getElementById('fsSignCanvas').getContext('2d') : sigCtx;
+  const cv = inFS ? document.getElementById('fsSignCanvas') : sigCanvas;
+  fetch('/signature-wall').then(r => r.json()).then(d => {
+    ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, cv.width, cv.height);
+    if (d.image_data) { const img = new Image(); img.onload = () => ctx.drawImage(img, 0, 0, cv.width, cv.height); img.src = d.image_data; }
+  });
+}
+async function clearSignature() {
+  if (!confirm('确定清除整个签名墙？')) return;
+  try { await fetch('/signature-wall/clear', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requester: currentUser.name }) }); sigCtx.fillStyle = '#FFFFFF'; sigCtx.fillRect(0, 0, 1200, 900); alert('已清除'); } catch (e) { alert('清除失败'); }
+}
+async function saveSignature() {
+  if (document.getElementById('sigFullscreen').classList.contains('active')) closeSignatureFullscreen();
+  const dataUrl = sigCanvas.toDataURL('image/jpeg', 0.9);
+  try {
+    const oldData = await (await fetch('/signature-wall')).json();
+    let final = dataUrl;
+    if (oldData.image_data) {
+      const mc = document.createElement('canvas'); mc.width = 1200; mc.height = 900; const mctx = mc.getContext('2d');
+      const oi = new Image(); await new Promise(r => { oi.onload = r; oi.src = oldData.image_data; });
+      mctx.drawImage(oi, 0, 0, 1200, 900);
+      const ni = new Image(); await new Promise(r => { ni.onload = r; ni.src = dataUrl; });
+      mctx.drawImage(ni, 0, 0, 1200, 900);
+      final = mc.toDataURL('image/jpeg', 0.9);
+    }
+    const res = await (await fetch('/signature-wall', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image_data: final }) })).json();
+    alert(res.success ? '保存成功！' : (res.error || '保存失败'));
+  } catch (e) { alert('保存失败'); }
+}
+
+// ========== 歌单 ==========
+async function renderSongs() {
+  const c = document.getElementById('contentArea');
+  try {
+    const songs = await (await fetch('/songs')).json();
+    let h = '<div style="margin-bottom:16px;"><button class="btn btn-primary" onclick="openAddSongModal()">🎵 添加歌曲</button></div><h4 style="margin:16px 0 12px;">🎧 歌单</h4>';
+    if (!songs || !songs.length) { h += '<div class="empty-state"><div class="empty-icon">🎵</div>歌单为空</div>'; }
+    else {
+      h += '<div class="song-list">';
+      songs.forEach(s => { h += `<div class="song-item${currentSongName===s.name?' playing':''}" onclick="playSong('${escapeHtml(s.filename)}','${escapeHtml(s.name)}')"><div class="song-info"><span class="song-name">🎵 ${escapeHtml(s.name)}</span><span class="song-uploader">${escapeHtml(s.uploaded_by)}</span></div><span class="song-play">▶️</span></div>`; });
+      h += '</div>';
+    }
+    h += '<p style="font-size:12px;color:var(--gray-4);margin-top:16px;text-align:center;">歌曲通过 GitHub 上传，点击即可播放</p>';
+    c.innerHTML = h;
+  } catch (e) { c.innerHTML = '<div class="empty-state">加载失败</div>'; }
+}
+
+function openAddSongModal() {
+  document.getElementById('modalTitle').textContent = '添加歌曲';
+  document.getElementById('modalBody').innerHTML = '<div class="form-group"><label class="form-label">歌曲名称</label><input type="text" id="songName" class="input" maxlength="100"></div><div class="form-group"><label class="form-label">文件夹名</label><input type="text" id="songFolder" class="input" maxlength="100"><p style="font-size:12px;color:var(--gray-4);">对应 songs/文件夹名/ 目录</p></div>';
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doAddSong()">添加</button>';
+  document.getElementById('modal').classList.add('show');
+}
+async function doAddSong() {
+  const n = document.getElementById('songName').value.trim(), f = document.getElementById('songFolder').value.trim();
+  if (!n || !f) { alert('请填写完整'); return; }
+  try { await fetch('/songs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n, filename: f, uploaded_by: currentUser.name }) }); closeModal(); renderSongs(); } catch (e) { alert('添加失败'); }
+}
+
+function playSong(folder, name) {
+  if (audio) audio.pause();
+  currentSongName = name;
+  audio = new Audio(`/songs/${folder}/${name}.mp3`);
+  document.querySelector('.music-title').textContent = name;
+  document.querySelector('.music-artist').textContent = '歌单播放';
+  fetch(`/songs/${folder}/${name}.lrc`).then(r => { if (!r.ok) throw new Error('No lyrics'); return r.text(); }).then(t => parseLRC(t)).catch(() => { document.getElementById('lyricsContent').innerHTML = '<div style="color:var(--gray-4);padding:20px;">暂无歌词</div>'; });
+  audio.addEventListener('timeupdate', updateProgress);
+  audio.addEventListener('loadedmetadata', () => { document.getElementById('duration').textContent = formatTime(audio.duration); });
+  audio.addEventListener('play', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>'; document.getElementById('musicToggle').classList.add('playing'); });
+  audio.addEventListener('pause', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>'; document.getElementById('musicToggle').classList.remove('playing'); });
+  audio.addEventListener('ended', () => { document.querySelector('#playBtn svg').innerHTML = '<path d="M8 5v14l11-7z"/>'; document.getElementById('musicToggle').classList.remove('playing'); });
+  audio.play().catch(() => { alert('播放失败'); });
+  document.getElementById('musicPanel').classList.add('show');
+  renderSongs();
+}
+
+// ========== 个人资料（含漂流瓶） ==========
+function renderProfile() {
+  const c = document.getElementById('contentArea');
+  const av = currentUser.avatar || '😊', em = av.length <= 2 || !av.startsWith('http');
+  c.innerHTML = `
+    <div class="card" style="text-align:center;">
+      <div class="avatar-large" onclick="openAvatarModal()">${em ? av : `<img src="${escapeHtml(av)}" class="avatar-img">`}</div>
+      <div class="card-name" style="font-size:20px;margin-bottom:4px;justify-content:center;">${escapeHtml(currentUser.name)}</div>
+      <div style="color:var(--gray-4);font-size:14px;margin-bottom:12px;">${currentUser.role==='admin'?'👑 管理员':(currentUser.role==='teacher'?'👨‍🏫 老师':'🎓 同学')}</div>
+      <button class="btn btn-outline btn-small" onclick="openAvatarModal()">更换头像</button>
+    </div>
+    <div class="card"><h4 style="margin-bottom:16px;">💬 座右铭</h4><div class="form-group"><input type="text" id="profileMotto" class="input" maxlength="100"></div><button class="btn btn-primary" onclick="updateMotto()">保存</button><div id="mottoResult" class="result"></div></div>
+    <div class="card"><h4 style="margin-bottom:16px;">📝 联系方式</h4><div class="form-group"><label class="form-label">手机号</label><input type="tel" id="profilePhone" class="input" maxlength="20"></div><div class="form-group"><label class="form-label">邮箱</label><input type="email" id="profileEmail" class="input" maxlength="100"></div><div class="form-group"><label class="form-label">微信</label><input type="text" id="profileWechat" class="input" maxlength="50"></div><button class="btn btn-primary" onclick="updateProfile()">保存</button><div id="profileResult" class="result"></div></div>
+    <div class="card"><h4 style="margin-bottom:16px;">🔐 修改密码</h4><div class="form-group"><label class="form-label">原密码</label><input type="password" id="oldPassword" class="input" maxlength="100"></div><div class="form-group"><label class="form-label">新密码</label><input type="password" id="newPassword" class="input" maxlength="100"></div><div class="form-group"><label class="form-label">确认密码</label><input type="password" id="confirmPassword" class="input" maxlength="100"></div><button class="btn btn-primary" onclick="changePassword()">修改</button><div id="passwordResult" class="result"></div></div>
+    <div class="card"><h4 style="margin-bottom:16px;">🍾 漂流瓶</h4><p style="font-size:14px;color:var(--gray-5);margin-bottom:12px;">写信给未来的自己或他人</p><button class="btn btn-primary" onclick="openDriftBottleModal()" style="margin-bottom:12px;">✉️ 投递漂流瓶</button>
+      <div style="display:flex;gap:8px;margin-bottom:12px;"><button class="btn btn-small btn-outline" id="btnSent" onclick="loadDriftBottles('sent')">我投递的</button><button class="btn btn-small btn-outline" id="btnInbox" onclick="loadDriftBottles('inbox')">我能打开的</button></div>
+      <div id="driftBottleList"></div>
+    </div>`;
+  loadProfileContact();
+  loadDriftBottles('sent');
+}
+
+async function loadProfileContact() {
+  try { const ct = await (await fetch(`/contact/${encodeURIComponent(currentUser.name)}`)).json(); document.getElementById('profilePhone').value = ct.phone||''; document.getElementById('profileEmail').value = ct.email||''; document.getElementById('profileWechat').value = ct.wechat||''; document.getElementById('profileMotto').value = ct.motto||''; } catch (e) {}
+}
+async function updateMotto() { try { await fetch('/update-motto', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, motto: document.getElementById('profileMotto').value.trim() }) }); document.getElementById('mottoResult').textContent = '✅ 已保存'; document.getElementById('mottoResult').style.color = 'var(--success)'; } catch (e) {} }
+async function updateProfile() { try { await fetch('/update-contact', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, phone: document.getElementById('profilePhone').value, email: document.getElementById('profileEmail').value, wechat: document.getElementById('profileWechat').value }) }); document.getElementById('profileResult').textContent = '✅ 已保存'; } catch (e) {} }
+async function changePassword() {
+  const old = document.getElementById('oldPassword').value, n = document.getElementById('newPassword').value, cf = document.getElementById('confirmPassword').value, r = document.getElementById('passwordResult');
+  if (!old||!n||!cf) { r.textContent = '请填写完整'; return; }
+  if (n !== cf) { r.textContent = '两次不一致'; return; }
+  try { const res = await (await fetch('/change-password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, oldPassword: old, newPassword: n }) })).json(); r.textContent = res.success ? '✅ 修改成功' : res.error; r.style.color = res.success ? 'var(--success)' : 'var(--danger)'; } catch (e) {}
+}
+
+function openAvatarModal() {
+  document.getElementById('modalTitle').textContent = '修改头像';
+  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>选择表情</label><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">${['😊','😎','🥳','🤓','😇','🦊','🐼','🐨','🐸','⭐','🌟','🔥','🎓','📚','🎵'].map(e => `<span style="font-size:36px;cursor:pointer;padding:8px;" onclick="selectAvatar('${e}')">${e}</span>`).join('')}</div><p style="margin-top:20px;">或输入图片URL</p><input type="text" id="avatarUrl" class="input" maxlength="500"></div>`;
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="saveAvatar()">保存</button>';
+  document.getElementById('modal').classList.add('show'); window.selectedAvatar = null;
+}
+function selectAvatar(emoji) { window.selectedAvatar = emoji; document.getElementById('avatarUrl').value = ''; }
+async function saveAvatar() {
+  const av = document.getElementById('avatarUrl').value.trim() || window.selectedAvatar || '😊';
+  try { await fetch('/update-avatar', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: currentUser.name, avatar: av }) }); currentUser.avatar = av; localStorage.setItem('currentUser', JSON.stringify(currentUser)); closeModal(); renderProfile(); } catch (e) { alert('保存失败'); }
+}
+
+// ========== 漂流瓶 ==========
+function openDriftBottleModal() {
+  const names = [...new Set([...allClassmates.map(c => c.name), ...allTeachers.map(t => t.name)])];
+  document.getElementById('modalTitle').textContent = '投递漂流瓶';
+  document.getElementById('modalBody').innerHTML = `<div class="form-group"><label>收信人</label><select id="bottleTo" class="input"><option value="${escapeHtml(currentUser.name)}">给自己</option>${names.filter(n => n!==currentUser.name).map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')}</select></div><div class="form-group"><label>打开时间</label><input type="datetime-local" id="bottleTime" class="input"></div><div class="form-group"><label>内容</label><textarea id="bottleContent" class="input" rows="4" maxlength="1000"></textarea></div>`;
+  document.getElementById('modalFooter').innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doSendDriftBottle()">投递</button>';
+  document.getElementById('modal').classList.add('show');
+  const tm = new Date(); tm.setDate(tm.getDate()+1); document.getElementById('bottleTime').value = tm.toISOString().slice(0,16);
+}
+async function doSendDriftBottle() {
+  const to = document.getElementById('bottleTo').value, time = document.getElementById('bottleTime').value, ct = document.getElementById('bottleContent').value.trim();
+  if (!time || !ct) { alert('请填写完整'); return; }
+  try { await fetch('/drift-bottles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from_name: currentUser.name, to_name: to, content: ct, open_time: time }) }); closeModal(); alert('投递成功！'); loadDriftBottles('sent'); } catch (e) { alert('投递失败'); }
+}
+async function loadDriftBottles(type) {
+  document.getElementById('btnSent').classList.toggle('active', type==='sent');
+  document.getElementById('btnInbox').classList.toggle('active', type==='inbox');
+  const list = document.getElementById('driftBottleList');
+  try {
+    const bottles = await (await fetch(`/drift-bottles/${type}?name=${encodeURIComponent(currentUser.name)}`)).json();
+    if (!bottles || !bottles.length) { list.innerHTML = '<div class="empty-state">暂无漂流瓶</div>'; return; }
+    list.innerHTML = bottles.map(b => {
+      const canOpen = type === 'inbox' || new Date(b.open_time) <= new Date();
+      return `<div class="drift-bottle${!canOpen&&type==='sent'?' locked':''}"><div class="bottle-icon">${canOpen?'📬':'🔒'}</div><div class="bottle-from">${escapeHtml(b.from_name)} → ${escapeHtml(b.to_name)}</div><div class="bottle-time">打开：${new Date(b.open_time).toLocaleString()}</div>${canOpen?`<div class="bottle-content">${escapeHtml(b.content)}</div>`:'<div class="bottle-lock">🔒</div>'}</div>`;
+    }).join('');
+  } catch (e) { list.innerHTML = '<div class="empty-state">加载失败</div>'; }
+}
+
+// ========== 通用 ==========
+function openFeedbackModal(toName, toRole, type) {
+  document.getElementById('modalTitle').textContent = type==='evaluation'?`评价 ${toName}`:`感谢 ${toName}`;
+  document.getElementById('modalBody').innerHTML = '<textarea id="feedbackContent" class="input" rows="4" maxlength="500"></textarea>';
+  document.getElementById('modalFooter').innerHTML = `<button class="btn btn-secondary" onclick="closeModal()">取消</button><button class="btn btn-primary" onclick="doFeedback('${escapeHtml(toName)}','${toRole}','${type}')">发送</button>`;
+  document.getElementById('modal').classList.add('show');
+}
+async function doFeedback(toName, toRole, type) {
+  const ct = document.getElementById('feedbackContent').value.trim(); if (!ct) { alert('请输入内容'); return; }
+  try { await fetch('/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from_name: currentUser.name, from_role: currentUser.role, to_name: toName, to_role: toRole, content: ct, type }) }); closeModal(); alert('发送成功'); } catch (e) { alert('发送失败'); }
+}
+function closeModal() { document.getElementById('modal').classList.remove('show'); }
+function logout() { localStorage.removeItem('currentUser'); currentUser = null; document.getElementById('mainPage').classList.remove('active'); document.getElementById('loginPage').classList.add('active'); document.getElementById('passwordInput').value = ''; document.getElementById('nameInput').value = ''; }
+
+// ========== 启动 ==========
+const savedUser = localStorage.getItem('currentUser');
+if (savedUser) { currentUser = JSON.parse(savedUser); showMainPage(); }
+loadClassmatesList();
