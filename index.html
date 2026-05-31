@@ -56,11 +56,11 @@
       </div>
       <div class="login-form">
         <div class="input-wrapper">
-          <input type="text" id="nameInput" class="input" placeholder="输入你的姓名" autocomplete="off">
+          <input type="text" id="nameInput" class="input" placeholder="输入你的姓名" autocomplete="off" maxlength="50">
           <span class="input-icon">👤</span>
         </div>
         <div class="input-wrapper">
-          <input type="password" id="passwordInput" class="input" placeholder="输入密码">
+          <input type="password" id="passwordInput" class="input" placeholder="输入密码" maxlength="100">
           <span class="input-icon">🔐</span>
         </div>
         <p class="login-hint">默认密码：111111</p>
@@ -85,7 +85,6 @@
 
     <!-- 主页 -->
     <div id="mainPage" class="page">
-      <!-- 顶部导航 -->
       <div class="nav-bar">
         <div class="nav-title">
           <span id="pageTitle">班级相册</span>
@@ -96,10 +95,8 @@
         </div>
       </div>
 
-      <!-- 底部标签栏 -->
       <div class="tab-bar" id="tabBar"></div>
 
-      <!-- 内容区域 -->
       <div class="content-area" id="contentArea"></div>
     </div>
   </div>
