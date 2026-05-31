@@ -17,7 +17,6 @@ export default {
       return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    // GitHub 上传辅助函数
     async function uploadToGitHub(filePath, content, message) {
       const apiUrl = `https://api.github.com/repos/${env.GITHUB_REPO}/contents/${filePath}`;
       let sha = null;
@@ -25,7 +24,8 @@ export default {
       const body = { message, content, branch: 'main' };
       if (sha) body.sha = sha;
       const gr = await fetch(apiUrl, { method: 'PUT', headers: { 'Authorization': `token ${env.GITHUB_TOKEN}`, 'User-Agent': 'GraduationApp', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      return { ok: gr.ok, data: await gr.json() };
+      const gd = await gr.json();
+      return { ok: gr.ok, data: gd };
     }
 
     async function getGitHubFile(filePath) {
@@ -55,7 +55,22 @@ export default {
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
-    // ========== 上传文件到 GitHub（通用） ==========
+    // ========== 更新头像 ==========
+    if (path === '/update-avatar' && request.method === 'PUT') {
+      const { name, avatar } = await request.json();
+      await env.DB.prepare('UPDATE classmates SET avatar = ? WHERE name = ?').bind(avatar, name).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+    
+    // ========== 更新座右铭/自我介绍 ==========
+    if (path === '/update-motto' && request.method === 'PUT') {
+      const { name, motto, intro } = await request.json();
+      if (motto !== undefined) await env.DB.prepare('UPDATE classmates SET motto = ?, updated_at = datetime("now") WHERE name = ?').bind(motto, name).run();
+      if (intro !== undefined) await env.DB.prepare('UPDATE classmates SET intro = ?, updated_at = datetime("now") WHERE name = ?').bind(intro, name).run();
+      return Response.json({ success: true }, { headers: corsHeaders });
+    }
+
+    // ========== 通用文件上传到 GitHub ==========
     if (path === '/upload-file' && request.method === 'POST') {
       const fd = await request.formData();
       const file = fd.get('file');
@@ -69,10 +84,10 @@ export default {
       const fp = subfolder ? `${folder}/${subfolder}/${fname}` : `${folder}/${fname}`;
       const r = await uploadToGitHub(fp, b64, `上传: ${fp}`);
       if (r.ok) return Response.json({ success: true, path: fp }, { headers: corsHeaders });
-      return Response.json({ error: r.data.message || '上传失败' }, { status: 400, headers: corsHeaders });
+      return Response.json({ error: r.data?.message || '上传失败' }, { status: 400, headers: corsHeaders });
     }
 
-    // ========== 获取 GitHub 文件内容 ==========
+    // ========== 获取 GitHub 文件 ==========
     if (path === '/get-file' && request.method === 'POST') {
       const { filePath } = await request.json();
       const f = await getGitHubFile(filePath);
@@ -80,17 +95,18 @@ export default {
       return Response.json({ content: f.content, sha: f.sha, encoding: f.encoding || 'base64' }, { headers: corsHeaders });
     }
 
-    // ========== 管理员：修改仓库文件 ==========
+    // ========== 管理员编辑文件 ==========
     if (path === '/admin/edit-file' && request.method === 'PUT') {
       const { requester, filePath, content, sha } = await request.json();
       const admin = await env.DB.prepare("SELECT role FROM classmates WHERE name = ? AND role = 'admin'").bind(requester).first();
       if (!admin) return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
-      const r = await uploadToGitHub(filePath, btoa(content), `编辑: ${filePath}`);
+      const b64 = btoa(unescape(encodeURIComponent(content)));
+      const r = await uploadToGitHub(filePath, b64, `编辑: ${filePath}`);
       if (r.ok) return Response.json({ success: true }, { headers: corsHeaders });
-      return Response.json({ error: r.data.message }, { status: 400, headers: corsHeaders });
+      return Response.json({ error: r.data?.message || '保存失败' }, { status: 400, headers: corsHeaders });
     }
 
-    // ========== 管理员：获取仓库文件列表 ==========
+    // ========== 管理员文件列表 ==========
     if (path === '/admin/list-files' && request.method === 'GET') {
       const requester = new URL(request.url).searchParams.get('requester');
       const admin = await env.DB.prepare("SELECT role FROM classmates WHERE name = ? AND role = 'admin'").bind(requester).first();
@@ -101,60 +117,46 @@ export default {
       return Response.json({ files: d.tree || [] }, { headers: corsHeaders });
     }
     
-    // ========== 更新头像URL ==========
-    if (path === '/update-avatar' && request.method === 'PUT') {
-      const { name, avatar } = await request.json();
-      await env.DB.prepare('UPDATE classmates SET avatar = ? WHERE name = ?').bind(avatar, name).run();
-      return Response.json({ success: true }, { headers: corsHeaders });
-    }
-    
-    // ========== 座右铭 ==========
-    if (path === '/update-motto' && request.method === 'PUT') {
-      const { name, motto } = await request.json();
-      await env.DB.prepare('UPDATE classmates SET motto = ?, updated_at = datetime("now") WHERE name = ?').bind(motto, name).run();
-      return Response.json({ success: true }, { headers: corsHeaders });
-    }
-    
-    // ========== 列表接口 ==========
+    // ========== 列表 ==========
     if (path === '/classmates-list' && request.method === 'GET') {
       const r = await env.DB.prepare("SELECT name FROM classmates WHERE role IN ('student','admin') ORDER BY name").all();
       return Response.json(r.results, { headers: corsHeaders });
     }
     if (path === '/classmates' && request.method === 'GET') {
-      const r = await env.DB.prepare("SELECT id, name, avatar FROM classmates WHERE role = 'student' ORDER BY name").all();
+      const r = await env.DB.prepare("SELECT id, name, avatar, motto, intro FROM classmates WHERE role = 'student' ORDER BY name").all();
       return Response.json(r.results, { headers: corsHeaders });
     }
     if (path === '/teachers' && request.method === 'GET') {
-      const r = await env.DB.prepare("SELECT id, name, role, avatar, subject FROM classmates WHERE role = 'teacher' ORDER BY CASE subject WHEN '语文' THEN 1 WHEN '数学' THEN 2 WHEN '英语' THEN 3 WHEN '物理' THEN 4 WHEN '化学' THEN 5 WHEN '政治' THEN 6 WHEN '历史' THEN 7 WHEN '音乐' THEN 8 WHEN '体育' THEN 9 WHEN '美术' THEN 10 ELSE 99 END, name").all();
+      const r = await env.DB.prepare("SELECT id, name, role, avatar, subject, motto, intro FROM classmates WHERE role = 'teacher' ORDER BY CASE subject WHEN '语文' THEN 1 WHEN '数学' THEN 2 WHEN '英语' THEN 3 WHEN '物理' THEN 4 WHEN '化学' THEN 5 WHEN '政治' THEN 6 WHEN '历史' THEN 7 WHEN '音乐' THEN 8 WHEN '体育' THEN 9 WHEN '美术' THEN 10 ELSE 99 END, name").all();
       return Response.json(r.results, { headers: corsHeaders });
     }
     
-    // ========== 获取联系方式 ==========
+    // ========== 联系方式 ==========
     if (path.startsWith('/contact/') && request.method === 'GET') {
       const name = decodeURIComponent(path.replace('/contact/', ''));
-      const r = await env.DB.prepare('SELECT phone, email, wechat, motto, role, avatar, subject FROM classmates WHERE name = ?').bind(name).first();
+      const r = await env.DB.prepare('SELECT phone, email, wechat, qq, motto, intro, role, avatar, subject FROM classmates WHERE name = ?').bind(name).first();
       return Response.json(r || {}, { headers: corsHeaders });
     }
     if (path === '/update-contact' && request.method === 'PUT') {
-      const { name, phone, email, wechat } = await request.json();
-      await env.DB.prepare('UPDATE classmates SET phone = ?, email = ?, wechat = ?, updated_at = datetime("now") WHERE name = ?').bind(phone, email, wechat, name).run();
+      const { name, phone, email, wechat, qq } = await request.json();
+      await env.DB.prepare('UPDATE classmates SET phone = ?, email = ?, wechat = ?, qq = ?, updated_at = datetime("now") WHERE name = ?').bind(phone, email, wechat, qq, name).run();
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     
     // ========== 管理员增删改 ==========
     if (path === '/admin/update-user' && request.method === 'PUT') {
-      const { requester, targetName, phone, email, wechat, role } = await request.json();
+      const { requester, targetName, phone, email, wechat, qq, role, subject } = await request.json();
       const a = await env.DB.prepare("SELECT role FROM classmates WHERE name = ? AND role = 'admin'").bind(requester).first();
       if (!a) return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
-      await env.DB.prepare('UPDATE classmates SET phone=?, email=?, wechat=?, role=?, updated_at=datetime("now") WHERE name=?').bind(phone, email, wechat, role, targetName).run();
+      await env.DB.prepare('UPDATE classmates SET phone=?, email=?, wechat=?, qq=?, role=?, subject=?, updated_at=datetime("now") WHERE name=?').bind(phone||'', email||'', wechat||'', qq||'', role||'student', subject||'', targetName).run();
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     if (path === '/admin/add-user' && request.method === 'POST') {
-      const { requester, name, role, phone, email, wechat } = await request.json();
+      const { requester, name, role, phone, email, wechat, qq } = await request.json();
       const a = await env.DB.prepare("SELECT role FROM classmates WHERE name = ? AND role = 'admin'").bind(requester).first();
       if (!a) return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
       const dh = 'bcb15f821479b4d5772bd0ca866c00ad5f926e3580720659cc80d39c9d09802a';
-      await env.DB.prepare('INSERT INTO classmates (name, password_hash, role, phone, email, wechat) VALUES (?,?,?,?,?,?)').bind(name, dh, role, phone, email, wechat).run();
+      await env.DB.prepare('INSERT INTO classmates (name, password_hash, role, phone, email, wechat, qq) VALUES (?,?,?,?,?,?,?)').bind(name, dh, role, phone||'', email||'', wechat||'', qq||'').run();
       return Response.json({ success: true }, { headers: corsHeaders });
     }
     if (path === '/admin/delete-user' && request.method === 'DELETE') {
@@ -175,7 +177,6 @@ export default {
       const r = await env.DB.prepare('SELECT id, from_name, content, created_at FROM messages WHERE to_name = ? ORDER BY created_at DESC').bind(tn).all();
       return Response.json(r.results, { headers: corsHeaders });
     }
-    // 获取某人发出的留言
     if (path.startsWith('/messages-from/') && request.method === 'GET') {
       const fn = decodeURIComponent(path.replace('/messages-from/', ''));
       const r = await env.DB.prepare('SELECT id, to_name, content, created_at FROM messages WHERE from_name = ? ORDER BY created_at DESC').bind(fn).all();
@@ -219,7 +220,7 @@ export default {
       const req = new URL(request.url).searchParams.get('requester');
       const a = await env.DB.prepare("SELECT role FROM classmates WHERE name = ? AND role = 'admin'").bind(req).first();
       if (!a) return Response.json({ error: '权限不足' }, { status: 403, headers: corsHeaders });
-      const users = await env.DB.prepare('SELECT id, name, role, phone, email, wechat, avatar, subject, motto, updated_at FROM classmates ORDER BY name').all();
+      const users = await env.DB.prepare('SELECT id, name, role, phone, email, wechat, qq, avatar, subject, motto, intro, updated_at FROM classmates ORDER BY name').all();
       const messages = await env.DB.prepare('SELECT id, from_name, to_name, content, created_at FROM messages ORDER BY created_at DESC').all();
       const feedbacks = await env.DB.prepare('SELECT id, from_name, from_role, to_name, to_role, content, type, created_at FROM feedbacks ORDER BY created_at DESC').all();
       const photos = await env.DB.prepare('SELECT id, uploaded_by, title, description, image_url, created_at FROM photos ORDER BY created_at DESC').all();
@@ -262,7 +263,7 @@ export default {
     // ========== 签名墙 ==========
     if (path === '/signature-wall' && request.method === 'POST') {
       const { image_data } = await request.json();
-      if (image_data.length > 3000000) return Response.json({ error: '图片太大' }, { status: 400, headers: corsHeaders });
+      if (image_data.length > 5000000) return Response.json({ error: '图片太大' }, { status: 400, headers: corsHeaders });
       await env.DB.prepare('INSERT OR REPLACE INTO signature_wall (id, image_data, updated_at) VALUES (1, ?, datetime("now"))').bind(image_data).run();
       return Response.json({ success: true }, { headers: corsHeaders });
     }
@@ -290,17 +291,17 @@ export default {
     }
     if (path === '/songs/upload' && request.method === 'POST') {
       const fd = await request.formData();
-      const file = fd.get('file'), sn = fd.get('song_name'), ft = fd.get('file_type');
+      const file = fd.get('file'), sn = fd.get('song_name');
       if (!file || !sn) return Response.json({ error: '缺少参数' }, { status: 400, headers: corsHeaders });
       if (!/^[a-zA-Z0-9_\-\u4e00-\u9fa5]+$/.test(sn)) return Response.json({ error: '非法字符' }, { status: 400, headers: corsHeaders });
       if (file.size > 20*1024*1024) return Response.json({ error: '文件过大' }, { status: 400, headers: corsHeaders });
       const ab = await file.arrayBuffer();
       const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
-      const fn = file.name || `${sn}.${ft}`;
+      const fn = file.name || `${sn}.mp3`;
       const fp = `songs/${sn}/${fn}`;
       const r = await uploadToGitHub(fp, b64, `上传歌曲: ${sn}`);
       if (r.ok) return Response.json({ success: true, path: fp }, { headers: corsHeaders });
-      return Response.json({ error: r.data.message }, { status: 400, headers: corsHeaders });
+      return Response.json({ error: r.data?.message || '上传失败' }, { status: 400, headers: corsHeaders });
     }
     
     // ========== 漂流瓶 ==========
