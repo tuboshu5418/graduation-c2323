@@ -298,10 +298,9 @@ export default {
         const fp = `songs/${sn}/${fn}`;
         const r = await uploadToGitHub(fp, b64, `上传歌曲: ${sn}`);
         if (r.ok) results.push({ success: true, path: fp });
-        else results.push({ error: r.data?.message || '上传失败' });
+        else results.push({ error: r.data?.message || '上传失败', code: r.data?.status || 'unknown' });
       }
       return Response.json({ results }, { headers: corsHeaders });
-    }
     
     if (path === '/drift-bottles' && request.method === 'POST') {
       const { from_name, to_name, content, open_time } = await request.json();
